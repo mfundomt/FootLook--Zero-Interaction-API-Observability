@@ -1,0 +1,688 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title>FootLook Live Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #0f172a;
+            color: #e5e7eb;
+            padding: 24px;
+        }
+
+        button.active {
+            background: #2563eb;
+            color: white;
+        }
+
+        button.method-active {
+            background: #059669;
+            color: white;
+        }
+
+        h1 {
+            margin-bottom: 6px;
+        }
+
+        .subtitle, .muted {
+            color: #94a3b8;
+        }
+
+        .subtitle {
+            margin-bottom: 12px;
+        }
+
+        #connectionStatus {
+            margin-bottom: 24px;
+        }
+
+        #topEndpoints {
+            max-height: 120px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .endpoint-item {
+            padding: 8px 0;
+            border-bottom: 1px solid #1f2937;
+        }
+
+            .endpoint-item:last-child {
+                border-bottom: none;
+            }
+
+         .endpoint-item {
+    padding: 8px 0;
+    border-bottom: 1px solid #1f2937;
+    cursor: pointer;
+}
+
+.endpoint-item:hover {
+    background: #1e293b;
+}
+
+        .cards {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .card {
+            background: #111827;
+            border: 1px solid #1f2937;
+            border-radius: 12px;
+            padding: 16px;
+            min-width: 160px;
+        }
+
+        .card-title {
+            color: #94a3b8;
+            font-size: 13px;
+        }
+
+        .card-value {
+            font-size: 28px;
+            font-weight: bold;
+            margin-top: 8px;
+        }
+
+        .feed {
+            background: #111827;
+            border: 1px solid #1f2937;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns: 90px 1fr 90px 100px 120px;
+            gap: 12px;
+            padding: 12px 16px;
+            border-bottom: 1px solid #1f2937;
+            align-items: center;
+        }
+
+            .row:last-child {
+                border-bottom: none;
+            }
+
+        .method {
+            font-weight: bold;
+        }
+
+        .badge {
+            border-radius: 999px;
+            padding: 4px 10px;
+            font-size: 12px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .ok {
+            background: #064e3b;
+            color: #a7f3d0;
+        }
+
+        .fail {
+            background: #7f1d1d;
+            color: #fecaca;
+        }
+
+        .slow {
+            color: #fbbf24;
+            font-weight: bold;
+        }
+
+        #rpmChart {
+            background: #111827;
+            border: 1px solid #1f2937;
+            border-radius: 12px;
+            margin-bottom: 24px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>FootLook Live Dashboard</h1>
+    <div class="subtitle">Real-time API observability stream</div>
+    <div id="connectionStatus" class="muted">Connecting...</div>
+
+    <div class="cards">
+        <div class="card">
+            <div class="card-title">Total Requests</div>
+            <div id="totalRequests" class="card-value">0</div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Failed Requests</div>
+            <div id="failedRequests" class="card-value">0</div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Average Duration</div>
+            <div id="avgDuration" class="card-value">0ms</div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Error Rate</div>
+            <div id="errorRate" class="card-value">0%</div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Slow Requests</div>
+            <div id="slowRequests" class="card-value">0</div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Requests / Min</div>
+            <div id="requestsPerMinute" class="card-value">0</div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Top Endpoints</div>
+            <div id="topEndpoints"></div>
+        </div>
+
+
+    </div>
+
+    <div style="margin-bottom: 12px;">
+        <button data-filter="all" onclick="setFilter('all')">All</button>
+        <button data-filter="failed" onclick="setFilter('failed')">Failures</button>
+        <button data-filter="slow" onclick="setFilter('slow')">Slow</button>
+        <button data-filter="success" onclick="setFilter('success')">2xx</button>
+        <button data-filter="clientError" onclick="setFilter('clientError')">4xx</button>
+        <button data-filter="serverError" onclick="setFilter('serverError')">5xx</button>
+
+        <button data-method="all" onclick="setMethodFilter('all')">All Methods</button>
+        <button data-method="GET" onclick="setMethodFilter('GET')">GET</button>
+        <button data-method="POST" onclick="setMethodFilter('POST')">POST</button>
+        <button data-method="PUT" onclick="setMethodFilter('PUT')">PUT</button>
+        <button data-method="PATCH" onclick="setMethodFilter('PATCH')">PATCH</button>
+        <button data-method="DELETE" onclick="setMethodFilter('DELETE')">DELETE</button>
+    </div>
+    <button onclick="pauseLiveFeed()">Pause Live</button>
+    <button onclick="resumeLiveFeed()">Resume Live</button>
+    <button onclick="exportCaptures()">
+        Export JSON
+    </button>
+
+    <button onclick="clearDashboard()">
+        Clear Dashboard
+    </button>
+
+    <button onclick="clearBackendCaptures()">
+        Clear Stored Captures
+    </button>
+
+    <input id="pathSearch"
+           placeholder="Search path..."
+           oninput="applyFilters()"
+           style="padding: 8px; border-radius: 8px; border: none; margin-left: 12px;" />
+
+    <div class="card">
+        <div class="card-title">Visible Results</div>
+        <div id="visibleResults" class="card-value">0</div>
+    </div>
+    <br />
+
+    <h2>Requests Per Minute Timeline</h2>
+    <canvas id="rpmChart" width="900" height="220"></canvas>
+
+    <div class="feed" id="feed"></div>
+    <h2>Capture Details</h2>
+
+    <div id="captureDetails" class="feed" style="padding:16px;">
+        Select a request...
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
+
+    <script>
+        const feed = document.getElementById("feed");
+        let requestTimestamps = [];
+        let livePaused = false;
+        let activeMethodFilter = "all";
+        let rpmHistory = [];
+
+        let activeFilter = 'all';
+        function setFilter(filter) {
+            activeFilter = filter;
+
+            document.querySelectorAll("[data-filter]").forEach(button => {
+                button.classList.toggle(
+                    "active",
+                    button.dataset.filter === filter
+                );
+            });
+
+            applyFilters();
+        }
+
+        function updateRpmChart() {
+            const canvas = document.getElementById("rpmChart");
+            const ctx = canvas.getContext("2d");
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const padding = 30;
+            const width = canvas.width - padding * 2;
+            const height = canvas.height - padding * 2;
+
+            ctx.strokeStyle = "#334155";
+            ctx.lineWidth = 1;
+
+            ctx.beginPath();
+            ctx.moveTo(padding, padding);
+            ctx.lineTo(padding, canvas.height - padding);
+            ctx.lineTo(canvas.width - padding, canvas.height - padding);
+            ctx.stroke();
+
+            if (rpmHistory.length === 0) return;
+
+            const maxValue = Math.max(...rpmHistory.map(x => x.value), 1);
+
+            ctx.strokeStyle = "#38bdf8";
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+
+            rpmHistory.forEach((point, index) => {
+                const x = padding + (index / Math.max(rpmHistory.length - 1, 1)) * width;
+                const y = canvas.height - padding - (point.value / maxValue) * height;
+
+                if (index === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+
+            ctx.stroke();
+
+            ctx.fillStyle = "#e5e7eb";
+            ctx.font = "12px Arial";
+            ctx.fillText(`Max RPM: ${maxValue}`, padding, 18);
+        }
+        function pauseLiveFeed() {
+            livePaused = true;
+            document.getElementById("connectionStatus").textContent =
+                "Connected — live feed paused";
+        }
+
+        function resumeLiveFeed() {
+            livePaused = false;
+            document.getElementById("connectionStatus").textContent =
+                "Connected to live stream.";
+        }
+
+        function applyFilters() {
+            const searchText =
+                document.getElementById("pathSearch").value.toLowerCase();
+
+            Array.from(feed.children).forEach(row => {
+                const statusCode = Number(row.dataset.statusCode);
+                const duration = Number(row.dataset.duration);
+                const path = (row.dataset.path || "").toLowerCase();
+                const method = row.dataset.method || "";
+
+                const matchesFilter =
+                    activeFilter === "all" ||
+                    (activeFilter === "failed" && statusCode >= 400) ||
+                    (activeFilter === "slow" && duration >= 1000) ||
+                    (activeFilter === "success" && statusCode >= 200 && statusCode < 300) ||
+                    (activeFilter === "clientError" && statusCode >= 400 && statusCode < 500) ||
+                    (activeFilter === "serverError" && statusCode >= 500);
+
+                const matchesMethod =
+                    activeMethodFilter === "all" ||
+                    method === activeMethodFilter;
+
+                const matchesSearch =
+                    !searchText || path.includes(searchText);
+
+                row.style.display =
+                    matchesFilter && matchesMethod && matchesSearch
+                        ? "grid"
+                        : "none";
+            });
+
+            const visibleRows =
+                Array.from(feed.children)
+                    .filter(row => row.style.display !== "none");
+
+            document.getElementById("visibleResults").textContent =
+                visibleRows.length;
+
+        }
+
+        function setMethodFilter(method) {
+            activeMethodFilter = method;
+
+            document.querySelectorAll("[data-method]").forEach(button => {
+                button.classList.toggle(
+                    "method-active",
+                    button.dataset.method === method
+                );
+            });
+
+            applyFilters();
+        }
+
+        function addCaptureToDashboard(capture) {
+            const time = new Date(capture.timestampUtc).toLocaleTimeString();
+            requestTimestamps.push(Date.now());
+
+            const oneMinuteAgo = Date.now() - 60000;
+
+            requestTimestamps = requestTimestamps.filter(timestamp =>
+                timestamp > oneMinuteAgo
+            );
+
+            document.getElementById("requestsPerMinute").textContent =
+                requestTimestamps.length;
+
+            const row = document.createElement("div");
+            row.className = "row";
+            row.dataset.statusCode = capture.statusCode;
+            row.dataset.duration = capture.durationMs;
+            row.dataset.path = capture.path;
+            row.captureData = capture;
+            row.dataset.method = capture.method;
+
+            row.addEventListener("click", () => {
+                showCaptureDetails(capture);
+            });
+
+            const isFailed = capture.statusCode >= 400 || capture.exception;
+            const isSlow = capture.durationMs >= 1000;
+
+            row.innerHTML = `
+                                                                <div class="method">${capture.method}</div>
+                                                                <div>${capture.path}</div>
+                                                                <div>
+                                                                    <span class="badge ${isFailed ? "fail" : "ok"}">
+                                                                        ${capture.statusCode}
+                                                                    </span>
+                                                                </div>
+                                                                <div class="${isSlow ? "slow" : "muted"}">
+                                                                    ${capture.durationMs}ms
+                                                                </div>
+                                                                <div class="muted">${time}</div>
+`;
+
+            feed.prepend(row);
+            applyFilters();
+
+            if (feed.children.length > 50) {
+                feed.removeChild(feed.lastChild);
+            }
+        }
+
+        function showCaptureDetails(capture) {
+
+            const panel =
+                document.getElementById("captureDetails");
+
+            const statusClass =
+                capture.statusCode >= 400
+                    ? "fail"
+                    : "ok";
+
+            const requestBody =
+                formatJson(capture.requestBody);
+
+            const responseBody =
+                formatJson(capture.responseBody);
+
+            const exceptionSection =
+                capture.exception
+                    ? `
+                                    <h4>Exception</h4>
+                                    <pre>${capture.exception}</pre>
+                                  `
+                    : "";
+
+            panel.innerHTML = `
+                                <h3>${capture.method} ${capture.path}</h3>
+
+                                <p>
+                                    <strong>Status:</strong>
+                                    <span class="badge ${statusClass}">
+                                        ${capture.statusCode}
+                                    </span>
+                                </p>
+
+                                <p><strong>Duration:</strong> ${capture.durationMs}ms</p>
+
+                                <p>
+                                    <strong>Timestamp:</strong>
+                                    ${new Date(capture.timestampUtc).toLocaleString()}
+                                </p>
+
+                                <p><strong>Correlation:</strong> ${capture.correlationId}</p>
+                                <button onclick="navigator.clipboard.writeText('${capture.correlationId}')">
+                                 Copy Correlation ID
+                                </button>
+
+                                <p>${exceptionSection}</p>
+
+                                <h4>Headers</h4>
+                                <pre>${JSON.stringify(capture.headers, null, 2)}</pre>
+
+                                <h4>Request Body</h4>
+                                <pre>${requestBody}</pre>
+
+                                <h4>Response Body</h4>
+                                <pre>${responseBody}</pre>
+                            `;
+        }
+
+        function clearDashboard() {
+            feed.innerHTML = "";
+
+            document.getElementById("captureDetails").innerHTML =
+                "Select a request...";
+
+            requestTimestamps = [];
+
+            document.getElementById("requestsPerMinute").textContent = "0";
+        }
+
+        async function clearBackendCaptures() {
+            const confirmed =
+                confirm("This will clear stored in-memory captures. Continue?");
+
+            if (!confirmed) return;
+
+            const response = await fetch("/footlook/captures", {
+                method: "DELETE"
+            });
+
+            if (!response.ok) {
+                alert("Failed to clear captures");
+                return;
+            }
+
+            clearDashboard();
+            await loadStats();
+        }
+
+        function formatJson(value) {
+            if (!value)
+                return "No body";
+
+            try {
+                return JSON.stringify(
+                    JSON.parse(value),
+                    null,
+                    2
+                );
+            }
+            catch
+            {
+                return value;
+            }
+        }
+
+        async function loadHistory() {
+            const response = await fetch("/footlook/captures/history?count=50");
+
+            if (!response.ok) {
+                console.error("Failed to load history:", response.status);
+                return;
+            }
+
+            const captures = await response.json();
+            captures.reverse().forEach(addCaptureToDashboard);
+        }
+
+        async function loadStats() {
+            const response = await fetch("/footlook/captures/stats");
+
+            if (!response.ok) {
+                console.error("Failed to load stats:", response.status);
+                return;
+            }
+
+            const stats = await response.json();
+
+            document.getElementById("totalRequests").textContent = stats.totalRequests;
+            document.getElementById("failedRequests").textContent = stats.failedRequests;
+            document.getElementById("avgDuration").textContent =
+                Math.round(stats.averageDurationMs) + "ms";
+
+            const errorRate = stats.totalRequests > 0
+                ? Math.round((stats.failedRequests / stats.totalRequests) * 100)
+                : 0;
+
+            document.getElementById("errorRate").textContent = errorRate + "%";
+            document.getElementById("slowRequests").textContent = stats.slowRequests ?? 0;
+
+            const topEndpoints = document.getElementById("topEndpoints");
+            topEndpoints.innerHTML = "";
+
+            if (stats.topEndpoints) {
+                stats.topEndpoints.forEach(endpoint => {
+
+                    const item = document.createElement("div");
+
+                    item.className = "endpoint-item";
+
+                    item.innerHTML = `
+                <strong>${endpoint.path}</strong><br>
+                Hits: ${endpoint.count}<br>
+                Avg: ${Math.round(endpoint.averageDuration)}ms<br>
+                Failures: ${endpoint.failures}
+            `;
+
+                    item.style.cursor = "pointer";
+
+                    item.addEventListener("click", () => {
+                        document.getElementById("pathSearch").value =
+                            endpoint.path;
+
+                        applyFilters();
+                    });
+
+                    topEndpoints.appendChild(item);
+                });
+            }
+        }
+
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/footlook/live")
+            .withAutomaticReconnect()
+            .build();
+
+        connection.on("captureReceived", async capture => {
+            if (!livePaused) {
+                addCaptureToDashboard(capture);
+            }
+
+            await loadStats();
+        });
+
+        connection.onclose(() => {
+            document.getElementById("connectionStatus").textContent =
+                "Disconnected from live stream.";
+        });
+
+        connection.onreconnecting(() => {
+            document.getElementById("connectionStatus").textContent =
+                "Reconnecting...";
+        });
+
+        connection.onreconnected(() => {
+            document.getElementById("connectionStatus").textContent =
+                "Connected to live stream.";
+        });
+
+        function exportCaptures() {
+
+            const captures =
+                Array.from(feed.children)
+                    .map(row => row.captureData);
+
+            const blob =
+                new Blob(
+                    [JSON.stringify(captures, null, 2)],
+                    { type: "application/json" });
+
+            const url =
+                URL.createObjectURL(blob);
+
+            const link =
+                document.createElement("a");
+
+            link.href = url;
+
+            link.download =
+                "footlook-captures.json";
+
+            link.click();
+
+            URL.revokeObjectURL(url);
+        }
+
+        async function startDashboard() {
+            try {
+                await connection.start();
+
+                document.getElementById("connectionStatus").textContent =
+                    "Connected to live stream.";
+
+                console.log("Connected to FootLook live stream");
+
+                await loadHistory();
+                await loadStats();
+            }
+            catch (err) {
+                document.getElementById("connectionStatus").textContent =
+                    "Dashboard failed to start.";
+
+                console.error("Dashboard startup error:", err);
+            }
+        }
+
+        startDashboard();
+        setInterval(() => {
+            const oneMinuteAgo = Date.now() - 60000;
+
+            requestTimestamps = requestTimestamps.filter(timestamp =>
+                timestamp > oneMinuteAgo
+            );
+
+            document.getElementById("requestsPerMinute").textContent =
+                requestTimestamps.length;
+                rpmHistory.push({
+                time: new Date(),
+                value: requestTimestamps.length
+                });
+
+              if (rpmHistory.length > 30) {
+              rpmHistory.shift();
+        }
+
+          updateRpmChart();
+        }, 5000);
+    </script>
+</body>
+</html>
