@@ -1,5 +1,6 @@
 ## ===== Visual Studio =====
 .vs/
+.vs
 *.vsidx
 *.suo
 *.user
@@ -41,3 +42,15 @@ Thumbs.db
 coverage*.json
 coverage*.xml
 coverage*.info
+
+### ===== Others =====
+*.log
+FootLook.API/obj/
+FootLook.API/bin/
+Footlook.Middleware/obj/
+FootLook.API/obj/Debug/net8.0/
+FootLook.API/obj/Release/net8.0/
+Footlook.Middleware/obj/Debug/net8.0/
+Footlook.Middleware/obj/Release/net8.0/
+Footlook.Middleware/obj/Debug/
+Footlook.Middleware/obj/Release/

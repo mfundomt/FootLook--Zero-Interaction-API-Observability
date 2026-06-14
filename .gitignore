@@ -21,3 +21,60 @@ rad.json
 *.flf
 #Test results file
 TestResults.xml
+
+## ===== Visual Studio =====
+.vs/
+.vs
+*.vsidx
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+## ===== Build output =====
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+[Ll]og/
+[Ll]ogs/
+
+## ===== .NET =====
+project.lock.json
+project.fragment.lock.json
+artifacts/
+*.pdb
+*.dll.config
+
+## ===== Rider / ReSharper =====
+.idea/
+_ReSharper*/
+*.DotSettings.user
+
+## ===== NuGet =====
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+
+## ===== OS =====
+Thumbs.db
+.DS_Store
+
+## ===== Test results =====
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+coverage*.json
+coverage*.xml
+coverage*.info
+
+### ===== Others =====
+*.log
+FootLook.API/obj/
+FootLook.API/bin/
+Footlook.Middleware/obj/
+FootLook.API/obj/Debug/net8.0/
+FootLook.API/obj/Release/net8.0/
+Footlook.Middleware/obj/Debug/net8.0/
+Footlook.Middleware/obj/Release/net8.0/
+Footlook.Middleware/obj/Debug/
+Footlook.Middleware/obj/Release/
