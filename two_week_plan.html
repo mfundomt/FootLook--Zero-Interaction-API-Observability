@@ -1,0 +1,141 @@
+<style>
+.week-block { margin-bottom: 28px; }
+.week-label { font-size: 14px; font-weight: 500; color: var(--color-text-primary); margin-bottom: 10px; }
+.day-row { display: flex; gap: 10px; margin-bottom: 8px; align-items: flex-start; }
+.day-pill { min-width: 54px; font-size: 11px; font-weight: 500; padding: 3px 8px; border-radius: 20px; text-align: center; flex-shrink: 0; margin-top: 2px; }
+.d-purple { background: #EEEDFE; color: #3C3489; }
+.d-teal   { background: #E1F5EE; color: #085041; }
+.d-coral  { background: #FAECE7; color: #712B13; }
+.d-blue   { background: #E6F1FB; color: #0C447C; }
+.day-task { font-size: 13px; color: var(--color-text-primary); line-height: 1.5; }
+.day-sub  { font-size: 12px; color: var(--color-text-secondary); margin-top: 2px; }
+.divider  { height: 1px; background: var(--color-border-tertiary); margin: 20px 0; }
+.milestone { font-size: 12px; font-weight: 500; padding: 4px 12px; border-radius: 20px; display: inline-block; margin-top: 4px; }
+.m-green  { background: #EAF3DE; color: #27500A; }
+</style>
+
+<div style="padding: 1rem 0">
+  <div class="week-block">
+    <div class="week-label">Week 1 — Build the core package</div>
+
+    <div class="day-row">
+      <span class="day-pill d-purple">Day 1</span>
+      <div>
+        <div class="day-task">Project setup & solution structure</div>
+        <div class="day-sub">Create solution with 3 projects: ShadowService (library), ShadowService.Tests, ShadowService.Demo (ASP.NET app). Install xUnit, Moq. Understand .csproj and solution files.</div>
+      </div>
+    </div>
+
+    <div class="day-row">
+      <span class="day-pill d-purple">Day 2</span>
+      <div>
+        <div class="day-task">Core data model — CapturedRequest</div>
+        <div class="day-sub">Design the C# record/class: Id, Timestamp, Method, Path, Headers, RequestBody, ResponseBody, StatusCode, DurationMs. Learn records vs classes in C#.</div>
+      </div>
+    </div>
+
+    <div class="day-row">
+      <span class="day-pill d-purple">Day 3</span>
+      <div>
+        <div class="day-task">IShadowSink interface + in-memory implementation</div>
+        <div class="day-sub">Define IShadowSink with WriteAsync(CapturedRequest). Build InMemorySink. This is the pluggable storage pattern — learn interfaces and dependency injection.</div>
+      </div>
+    </div>
+
+    <div class="day-row">
+      <span class="day-pill d-purple">Day 4</span>
+      <div>
+        <div class="day-task">ASP.NET middleware — ShadowMiddleware</div>
+        <div class="day-sub">Implement IMiddleware. Clone the HttpRequest body stream (streams are one-read-only — this is the key challenge). Capture request, call next(), capture response. No await blocking the main thread.</div>
+      </div>
+    </div>
+
+    <div class="day-row">
+      <span class="day-pill d-purple">Day 5</span>
+      <div>
+        <div class="day-task">Async background queue</div>
+        <div class="day-sub">Use Channel&lt;CapturedRequest&gt; or a ConcurrentQueue. Middleware enqueues; a BackgroundService dequeues and calls IShadowSink.WriteAsync. Keeps the request pipeline fast — learn async/await patterns.</div>
+      </div>
+    </div>
+
+    <div class="day-row">
+      <span class="day-pill d-purple">Day 6</span>
+      <div>
+        <div class="day-task">DI registration + AddShadowService() extension</div>
+        <div class="day-sub">Create IServiceCollection extension so users just call builder.Services.AddShadowService(). Learn the options pattern (ShadowServiceOptions). Make it feel like a real NuGet package.</div>
+      </div>
+    </div>
+
+    <div class="day-row">
+      <span class="day-pill d-purple">Day 7</span>
+      <div>
+        <div class="day-task">Unit tests + wire up demo app</div>
+        <div class="day-sub">Test InMemorySink, the queue, and data model. Wire the middleware into the Demo app. Make a real HTTP call and confirm it gets captured. First big milestone.</div>
+        <span class="milestone m-green">✓ Milestone: working core package</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="week-block">
+    <div class="week-label">Week 2 — Storage sinks, REST API, and NuGet publish</div>
+
+    <div class="day-row">
+      <span class="day-pill d-teal">Day 8</span>
+      <div>
+        <div class="day-task">File sink (JSON lines)</div>
+        <div class="day-sub">Implement FileSink: write each CapturedRequest as a JSON line to a .jsonl file. Learn System.Text.Json serialization. Handle file locking safely with SemaphoreSlim.</div>
+      </div>
+    </div>
+
+    <div class="day-row">
+      <span class="day-pill d-teal">Day 9</span>
+      <div>
+        <div class="day-task">SQL sink with EF Core</div>
+        <div class="day-sub">Create SqlSink using Entity Framework Core + SQLite. Design the captures table. Learn DbContext, migrations, and async writes. Wire to demo app — swap sinks with one line of config.</div>
+      </div>
+    </div>
+
+    <div class="day-row">
+      <span class="day-pill d-teal">Day 10</span>
+      <div>
+        <div class="day-task">Filtering & sampling options</div>
+        <div class="day-sub">Add ShadowServiceOptions: ExcludePaths (e.g. /health), SamplingRate (0.0–1.0), MaxBodySize. Apply filters inside the middleware before enqueuing. Learn Options pattern properly.</div>
+      </div>
+    </div>
+
+    <div class="day-row">
+      <span class="day-pill d-blue">Day 11</span>
+      <div>
+        <div class="day-task">REST API read-back endpoints</div>
+        <div class="day-sub">Add a CapturesController to the demo/host app: GET /captures (paged), GET /captures/{id}, GET /captures/stats (count, avg duration, top paths). Learn minimal API vs controller routing.</div>
+      </div>
+    </div>
+
+    <div class="day-row">
+      <span class="day-pill d-blue">Day 12</span>
+      <div>
+        <div class="day-task">Integration tests + edge cases</div>
+        <div class="day-sub">Test large bodies, binary content, multipart forms, high concurrency. Use WebApplicationFactory to spin up a real test host. Fix any race conditions in the queue.</div>
+      </div>
+    </div>
+
+    <div class="day-row">
+      <span class="day-pill d-coral">Day 13</span>
+      <div>
+        <div class="day-task">Package & publish to NuGet</div>
+        <div class="day-sub">Configure .csproj PackageId, Version, Description, authors. dotnet pack → .nupkg. Publish to nuget.org (free account) or a local feed. Write a README with a code sample.</div>
+      </div>
+    </div>
+
+    <div class="day-row">
+      <span class="day-pill d-coral">Day 14</span>
+      <div>
+        <div class="day-task">Polish, docs, and demo</div>
+        <div class="day-sub">XML doc comments on public APIs. GitHub repo with README, architecture diagram, and quick-start. Run the demo app end-to-end and confirm captures appear in all three sinks.</div>
+        <span class="milestone m-green">✓ Milestone: published NuGet package</span>
+      </div>
+    </div>
+  </div>
+</div>
