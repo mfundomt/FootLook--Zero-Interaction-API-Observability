@@ -7,51 +7,83 @@ namespace FootLook.Core.Sinks;
 
 public class MongoSink : IShadowSink
 {
-    private readonly IMongoCollection<MongoCapturedRequest> _collection;
+    private readonly IMongoCollection<MongoCapturedRequest>? _collection;
+    private readonly bool _isEnabled;
 
     public MongoSink(FootLookOptions options)
     {
-        var client = new MongoClient(options.MongoConnectionString);
-        var database = client.GetDatabase(options.MongoDatabaseName);
+        try
+        {
+            if (string.IsNullOrWhiteSpace(options.MongoConnectionString))
+            {
+                Console.WriteLine("[MongoSink] MongoDB connection string is not configured. MongoSink will be disabled.");
+                _isEnabled = false;
+                return;
+            }
 
-        _collection = database.GetCollection<MongoCapturedRequest>(
-            options.MongoCollectionName);
+            var client = new MongoClient(options.MongoConnectionString);
+            var database = client.GetDatabase(options.MongoDatabaseName);
+
+            _collection = database.GetCollection<MongoCapturedRequest>(
+                options.MongoCollectionName);
+
+            _isEnabled = true;
+            Console.WriteLine("[MongoSink] MongoDB connection initialized successfully");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[MongoSink] Failed to initialize MongoDB connection: {ex.Message}");
+            Console.WriteLine("[MongoSink] MongoSink will be disabled. Application will continue without MongoDB.");
+            _isEnabled = false;
+        }
     }
 
     public async Task WriteAsync(CapturedRequest request)
     {
-        Console.WriteLine($"[MongoSink] Writing {request.Method} {request.Path}");
-
-        var document = new MongoCapturedRequest
+        if (!_isEnabled || _collection == null)
         {
-            Id = request.Id.ToString(),
-            TimestampUtc = request.TimestampUtc,
-            Method = request.Method,
-            Path = request.Path,
-            Headers = request.Headers,
-            RequestBody = request.RequestBody,
-            ResponseBody = request.ResponseBody,
-            StatusCode = request.StatusCode,
-            DurationMs = request.DurationMs,
-            Exception = request.Exception,
-            CorrelationId = request.CorrelationId,
-            ServiceName = request.ServiceName,
-            EnvironmentName = request.EnvironmentName,
-            RequestSizeBytes = request.RequestSizeBytes,
-            ResponseSizeBytes = request.ResponseSizeBytes,
-            RequestContentType = request.RequestContentType,
-            ResponseContentType = request.ResponseContentType,
-            RequestBodyCaptured = request.RequestBodyCaptured,
-            ResponseBodyCaptured = request.ResponseBodyCaptured,
-            RequestBodySkippedReason = request.RequestBodySkippedReason,
-            ResponseBodySkippedReason = request.ResponseBodySkippedReason,
-            ClientIp = request.ClientIp,
-            UserAgent = request.UserAgent
-        };
+            return;
+        }
 
-        await _collection.InsertOneAsync(document);
+        try
+        {
+            Console.WriteLine($"[MongoSink] Writing {request.Method} {request.Path}");
 
-        Console.WriteLine("[MongoSink] Written successfully");
+            var document = new MongoCapturedRequest
+            {
+                Id = request.Id.ToString(),
+                TimestampUtc = request.TimestampUtc,
+                Method = request.Method,
+                Path = request.Path,
+                Headers = request.Headers,
+                RequestBody = request.RequestBody,
+                ResponseBody = request.ResponseBody,
+                StatusCode = request.StatusCode,
+                DurationMs = request.DurationMs,
+                Exception = request.Exception,
+                CorrelationId = request.CorrelationId,
+                ServiceName = request.ServiceName,
+                EnvironmentName = request.EnvironmentName,
+                RequestSizeBytes = request.RequestSizeBytes,
+                ResponseSizeBytes = request.ResponseSizeBytes,
+                RequestContentType = request.RequestContentType,
+                ResponseContentType = request.ResponseContentType,
+                RequestBodyCaptured = request.RequestBodyCaptured,
+                ResponseBodyCaptured = request.ResponseBodyCaptured,
+                RequestBodySkippedReason = request.RequestBodySkippedReason,
+                ResponseBodySkippedReason = request.ResponseBodySkippedReason,
+                ClientIp = request.ClientIp,
+                UserAgent = request.UserAgent
+            };
+
+            await _collection.InsertOneAsync(document);
+
+            Console.WriteLine("[MongoSink] Written successfully");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[MongoSink] Failed to write to MongoDB: {ex.Message}");
+        }
     }
 
     private class MongoCapturedRequest

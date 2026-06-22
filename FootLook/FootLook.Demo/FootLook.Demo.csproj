@@ -18,4 +18,6 @@
     <ProjectReference Include="..\FootLook.Data\FootLook.Data.csproj" />
   </ItemGroup>
 
+  <ProjectExtensions><VisualStudio><UserProperties appsettings_1json__JsonSchema="" /></VisualStudio></ProjectExtensions>
+
 </Project>
