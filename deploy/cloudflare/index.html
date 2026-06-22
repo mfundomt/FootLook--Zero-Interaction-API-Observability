@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>FootLook - Zero-Interaction API Observability</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Real-time API monitoring dashboard for FootLook middleware">
+    <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.0/dist/browser/signalr.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --backend-url: 'https://your-footlook-api.azurewebsites.net';
+        }
+    </style>
+</head>
+<body>
+    <div class="hero">
+        <h1>🔍 FootLook Dashboard</h1>
+        <p>Zero-interaction API observability in real-time</p>
+        <div class="links">
+            <a href="dashboard.html">Live Dashboard</a>
+            <a href="https://github.com/mfundomt/FootLook--Zero-Interaction-API-Observability" target="_blank">GitHub</a>
+        </div>
+    </div>
+
+    <div id="dashboard-container" style="display: none;">
+        <!-- Removed - direct navigation instead -->
+    </div>
+
+    <div class="features">
+        <h2>Features</h2>
+        <div class="feature-grid">
+            <div class="feature">
+                <h3>🚀 Zero Configuration</h3>
+                <p>Just add middleware - no code changes required</p>
+            </div>
+            <div class="feature">
+                <h3>⚡ Real-time Monitoring</h3>
+                <p>Watch API traffic as it happens via SignalR</p>
+            </div>
+            <div class="feature">
+                <h3>📊 Rich Analytics</h3>
+                <p>Performance metrics, error rates, and trends</p>
+            </div>
+            <div class="feature">
+                <h3>🎯 Smart Filtering</h3>
+                <p>Filter by endpoint, method, status, and more</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="demo-section">
+        <h2>Try It Live</h2>
+        <p>Click below to see FootLook in action - you can connect to your own API or our demo:</p>
+        <button onclick="loadDashboard()" class="cta-button">Launch Dashboard</button>
+        <p style="margin-top: 20px; color: #94a3b8;">
+            The dashboard includes a configuration UI where you can enter your own API URL.<br>
+            No code changes required - just deploy FootLook middleware and connect!
+        </p>
+    </div>
+
+    <script>
+        function loadDashboard() {
+            window.location.href = 'dashboard.html';
+        }
+    </script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: #e5e7eb;
+            min-height: 100vh;
+        }
+
+        .hero {
+            text-align: center;
+            padding: 80px 20px;
+        }
+
+        .hero h1 {
+            font-size: 3.5em;
+            margin-bottom: 20px;
+            background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero p {
+            font-size: 1.5em;
+            color: #94a3b8;
+            margin-bottom: 40px;
+        }
+
+        .links {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+        }
+
+        .links a {
+            padding: 15px 35px;
+            background: #2563eb;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .links a:hover {
+            background: #1d4ed8;
+            transform: translateY(-2px);
+        }
+
+        .features {
+            max-width: 1200px;
+            margin: 80px auto;
+            padding: 0 20px;
+        }
+
+        .features h2 {
+            text-align: center;
+            font-size: 2.5em;
+            margin-bottom: 50px;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 30px;
+        }
+
+        .feature {
+            background: #1e293b;
+            padding: 30px;
+            border-radius: 12px;
+            border: 1px solid #334155;
+        }
+
+        .feature h3 {
+            font-size: 1.5em;
+            margin-bottom: 15px;
+            color: #38bdf8;
+        }
+
+        .feature p {
+            color: #94a3b8;
+            line-height: 1.6;
+        }
+
+        .demo-section {
+            text-align: center;
+            padding: 80px 20px;
+        }
+
+        .demo-section h2 {
+            font-size: 2.5em;
+            margin-bottom: 20px;
+        }
+
+        .demo-section p {
+            font-size: 1.2em;
+            color: #94a3b8;
+            margin-bottom: 30px;
+        }
+
+        .cta-button {
+            padding: 18px 50px;
+            background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.2em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .cta-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 25px rgba(56, 189, 248, 0.4);
+        }
+    </style>
+</body>
+</html>
