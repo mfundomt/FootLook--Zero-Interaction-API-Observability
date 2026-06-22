@@ -20,6 +20,77 @@
             color: white;
         }
 
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 18px 0;
+            align-items: center;
+        }
+
+            .toolbar button,
+            .action-bar button {
+                background: #111827;
+                color: #cbd5e1;
+                border: 1px solid #334155;
+                border-radius: 999px;
+                padding: 9px 14px;
+                font-size: 13px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s ease;
+            }
+
+                .toolbar button:hover,
+                .action-bar button:hover {
+                    background: #1e293b;
+                    color: #ffffff;
+                    border-color: #38bdf8;
+                    transform: translateY(-1px);
+                }
+
+                .toolbar button.active {
+                    background: #2563eb;
+                    color: #ffffff;
+                    border-color: #60a5fa;
+                    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
+                }
+
+                .toolbar button.method-active {
+                    background: #059669;
+                    color: #ffffff;
+                    border-color: #34d399;
+                    box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.25);
+                }
+
+        .divider {
+            width: 1px;
+            height: 32px;
+            background: #334155;
+            margin: 0 6px;
+        }
+
+        .action-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 18px;
+        }
+
+        #pathSearch {
+            background: #111827;
+            color: #e5e7eb;
+            border: 1px solid #334155 !important;
+            padding: 10px 14px !important;
+            border-radius: 999px !important;
+            outline: none;
+        }
+
+            #pathSearch:focus {
+                border-color: #38bdf8 !important;
+                box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
+            }
+
         h1 {
             margin-bottom: 6px;
         }
@@ -187,13 +258,15 @@
 
     </div>
 
-    <div style="margin-bottom: 12px;">
+    <div class="toolbar">
         <button data-filter="all" onclick="setFilter('all')">All</button>
         <button data-filter="failed" onclick="setFilter('failed')">Failures</button>
         <button data-filter="slow" onclick="setFilter('slow')">Slow</button>
         <button data-filter="success" onclick="setFilter('success')">2xx</button>
         <button data-filter="clientError" onclick="setFilter('clientError')">4xx</button>
         <button data-filter="serverError" onclick="setFilter('serverError')">5xx</button>
+
+        <div class="divider"></div>
 
         <button data-method="all" onclick="setMethodFilter('all')">All Methods</button>
         <button data-method="GET" onclick="setMethodFilter('GET')">GET</button>
@@ -202,24 +275,17 @@
         <button data-method="PATCH" onclick="setMethodFilter('PATCH')">PATCH</button>
         <button data-method="DELETE" onclick="setMethodFilter('DELETE')">DELETE</button>
     </div>
-    <button onclick="pauseLiveFeed()">Pause Live</button>
-    <button onclick="resumeLiveFeed()">Resume Live</button>
-    <button onclick="exportCaptures()">
-        Export JSON
-    </button>
+    <div class="action-bar">
+        <button onclick="pauseLiveFeed()">Pause Live</button>
+        <button onclick="resumeLiveFeed()">Resume Live</button>
+        <button onclick="exportCaptures()">Export JSON</button>
+        <button onclick="clearDashboard()">Clear Dashboard</button>
+        <button onclick="clearBackendCaptures()">Clear Stored Captures</button>
 
-    <button onclick="clearDashboard()">
-        Clear Dashboard
-    </button>
-
-    <button onclick="clearBackendCaptures()">
-        Clear Stored Captures
-    </button>
-
-    <input id="pathSearch"
-           placeholder="Search path..."
-           oninput="applyFilters()"
-           style="padding: 8px; border-radius: 8px; border: none; margin-left: 12px;" />
+        <input id="pathSearch"
+               placeholder="Search path..."
+               oninput="applyFilters()" />
+    </div>
 
     <div class="card">
         <div class="card-title">Visible Results</div>
