@@ -5,10 +5,23 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UserSecretsId>37b160e7-3309-4c75-9484-eb5271ec1faf</UserSecretsId>
+    <PackageId>FootLook.Core</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Mfundo Mthembu</Authors>
+    <Description>Real-time API observability middleware for ASP.NET Core with capture, privacy masking, reliability telemetry, and operational endpoints.</Description>
+    <PackageTags>footlook;observability;aspnetcore;middleware;monitoring;tracing;api</PackageTags>
+    <PackageProjectUrl>https://github.com/mfundomt/FootLook--Zero-Interaction-API-Observability</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/mfundomt/FootLook--Zero-Interaction-API-Observability</RepositoryUrl>
+    <PackageReadmeFile>README.NuGet.md</PackageReadmeFile>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
   </PropertyGroup>
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.NuGet.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>

@@ -5,10 +5,23 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UserSecretsId>c0f9087d-d0e1-4790-b9cb-8494aecc9719</UserSecretsId>
+    <PackageId>FootLook.Data</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Mfundo Mthembu</Authors>
+    <Description>Data and repository integration package for FootLook observability components.</Description>
+    <PackageTags>footlook;observability;data;repository;api</PackageTags>
+    <PackageProjectUrl>https://github.com/mfundomt/FootLook--Zero-Interaction-API-Observability</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/mfundomt/FootLook--Zero-Interaction-API-Observability</RepositoryUrl>
+    <PackageReadmeFile>README.NuGet.md</PackageReadmeFile>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\FootLook.Core\FootLook.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.NuGet.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>
