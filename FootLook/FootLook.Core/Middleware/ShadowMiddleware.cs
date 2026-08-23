@@ -554,7 +554,7 @@ namespace FootLook.Core.Middleware
 
             var redaction = GetRedactionValue();
 
-            var maskedValues = new List<KeyValuePair<string, string>>();
+            var maskedValues = new List<KeyValuePair<string, string?>>();
             foreach (var queryItem in context.Request.Query)
             {
                 var isSensitive = IsSensitiveQueryParameter(queryItem.Key);
@@ -564,7 +564,7 @@ namespace FootLook.Core.Middleware
                     foreach (var _ in queryItem.Value)
                     {
                         maskedQueryCount++;
-                        maskedValues.Add(new KeyValuePair<string, string>(queryItem.Key, redaction));
+                        maskedValues.Add(new KeyValuePair<string, string?>(queryItem.Key, redaction));
                     }
 
                     continue;
@@ -572,7 +572,7 @@ namespace FootLook.Core.Middleware
 
                 foreach (var queryValue in queryItem.Value)
                 {
-                    maskedValues.Add(new KeyValuePair<string, string>(queryItem.Key, queryValue));
+                    maskedValues.Add(new KeyValuePair<string, string?>(queryItem.Key, queryValue ?? string.Empty));
                 }
             }
 

@@ -48,8 +48,12 @@ namespace FootLook.Core.Sinks
         public void CleanupOldArchives()
         {
             var directory = Path.GetDirectoryName(_filepath);
+            if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+            {
+                return;
+            }
 
-            var files = Directory.GetFiles(directory, "captures-*.jsonl");
+            var files = Directory.GetFiles(directory, "captures_*.jsonl");
 
             foreach( var file in files)
             {
