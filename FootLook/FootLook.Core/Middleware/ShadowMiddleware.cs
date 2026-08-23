@@ -8,6 +8,9 @@ using Microsoft.Extensions.Logging;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.Components.Web;
+using FootLook.Core.Services;
+using System.Text.RegularExpressions;
+using System.Security.Cryptography;
 
 #region FootLook Middleware Flow
 //The flow of the middleware can be visualized as follows:
@@ -41,14 +44,18 @@ namespace FootLook.Core.Middleware
         private readonly IShadowQueue _queue;
         private readonly FootLookOptions _options;
         private readonly ILogger<ShadowMiddleware> _logger;
+        private readonly CaptureRuntimeState _captureRuntimeState;
+        private readonly PrivacyAuditStore _privacyAuditStore;
 
 
-        public ShadowMiddleware(RequestDelegate next, IShadowQueue queue, FootLookOptions options, ILogger<ShadowMiddleware> logger)
+        public ShadowMiddleware(RequestDelegate next, IShadowQueue queue, FootLookOptions options, ILogger<ShadowMiddleware> logger, CaptureRuntimeState captureRuntimeState, PrivacyAuditStore privacyAuditStore)
         {
             _next = next;
             _queue = queue;
             _options = options;
             _logger = logger;
+            _captureRuntimeState = captureRuntimeState;
+            _privacyAuditStore = privacyAuditStore;
         }
 
         //public async Task InvokeAsync(HttpContext context)
@@ -177,6 +184,12 @@ namespace FootLook.Core.Middleware
 
         public async Task InvokeAsync(HttpContext context)
         {
+            if (!_captureRuntimeState.IsCaptureEnabled)
+            {
+                await _next(context);
+                return;
+            }
+
             //Check if the request path should be ignored based on the options. This allows you to exclude certain endpoints or paths from being captured, which can be useful for sensitive information or to reduce noise in the logs.
             if (ShouldIgnorePath(context))
             {
@@ -206,12 +219,60 @@ namespace FootLook.Core.Middleware
 
 
             const string CorrelationHeader = "X-Correlation-ID";
+            const string TraceParentHeader = "traceparent";
+            const string TraceStateHeader = "tracestate";
+            const string BaggageHeader = "baggage";
 
             var correlationId =
                 context.Request.Headers[CorrelationHeader].FirstOrDefault()
                 ?? Guid.NewGuid().ToString();
 
             context.Response.Headers[CorrelationHeader] = correlationId;
+
+            var activity = Activity.Current;
+            var traceParent = context.Request.Headers[TraceParentHeader].FirstOrDefault();
+            var traceState = context.Request.Headers[TraceStateHeader].FirstOrDefault();
+            var baggage = context.Request.Headers[BaggageHeader].FirstOrDefault();
+            var traceId = activity?.TraceId.ToString() ?? string.Empty;
+            var spanId = activity?.SpanId.ToString() ?? string.Empty;
+            var parentSpanId = activity?.ParentSpanId.ToString() ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(traceParent))
+            {
+                traceParent = activity?.Id;
+            }
+
+            if (string.IsNullOrWhiteSpace(traceParent) &&
+                !string.IsNullOrWhiteSpace(traceId) &&
+                !string.IsNullOrWhiteSpace(spanId))
+            {
+                traceParent = $"00-{traceId}-{spanId}-01";
+            }
+
+            if (string.IsNullOrWhiteSpace(traceState))
+            {
+                traceState = activity?.TraceStateString ?? string.Empty;
+            }
+
+            if (string.IsNullOrWhiteSpace(baggage) && activity is not null)
+            {
+                baggage = string.Join(",", activity.Baggage.Select(kvp => $"{kvp.Key}={kvp.Value}"));
+            }
+
+            if (!string.IsNullOrWhiteSpace(traceParent))
+            {
+                context.Response.Headers[TraceParentHeader] = traceParent;
+            }
+
+            if (!string.IsNullOrWhiteSpace(traceState))
+            {
+                context.Response.Headers[TraceStateHeader] = traceState;
+            }
+
+            if (!string.IsNullOrWhiteSpace(baggage))
+            {
+                context.Response.Headers[BaggageHeader] = baggage;
+            }
 
             var stopwatch = Stopwatch.StartNew();
 
@@ -302,35 +363,73 @@ namespace FootLook.Core.Middleware
 
                 await responseBodyCopy.CopyToAsync(originalResponseBody);
 
-                var headers = CaptureHeaders(context);
+                var headers = CaptureHeaders(context, out var maskedHeaderCount);
+                var maskedPath = MaskPathAndQuery(context, out var maskedQueryParameterCount);
+
+                var maskedRequestBodyFieldCount = 0;
+                var maskedResponseBodyFieldCount = 0;
+                var maskedRequestBody = requestBodyCaptured
+                    ? TrimBody(MaskSensitiveBodyFields(requestBody, out maskedRequestBodyFieldCount))
+                    : null;
+                var maskedResponseBody = responseBodyCaptured
+                    ? TrimBody(MaskSensitiveBodyFields(responseBody, out maskedResponseBodyFieldCount))
+                    : null;
+                var anonymizedClientIp = MaskClientIp(context.Connection.RemoteIpAddress?.ToString(), out var clientIpAnonymized);
+                var anonymizedUserAgent = MaskUserAgent(context.Request.Headers.UserAgent.ToString(), out var userAgentAnonymized);
 
 
                 var capturedRequest = new CapturedRequest
                 {
                     Headers = headers,
                     Method = context.Request.Method,
-                    Path = context.Request.Path,
-                    RequestBody = requestBodyCaptured ? TrimBody(MaskSensitiveBodyFields(requestBody)): null,
-                    ResponseBody = responseBodyCaptured ? TrimBody(MaskSensitiveBodyFields(responseBody)):null,
+                    Path = maskedPath,
+                    RequestBody = maskedRequestBody,
+                    ResponseBody = maskedResponseBody,
                     StatusCode = context.Response.StatusCode,
+                    RequestContentType = context.Request.ContentType,
+                    RequestSizeBytes = context.Request.ContentLength ?? (string.IsNullOrEmpty(requestBody) ? 0 : Encoding.UTF8.GetByteCount(requestBody)),
+                    ResponseContentType = context.Response.ContentType,
+                    ResponseSizeBytes = context.Response.ContentLength ?? (string.IsNullOrEmpty(responseBody) ? 0 : Encoding.UTF8.GetByteCount(responseBody)),
                     DurationMs = stopwatch.ElapsedMilliseconds,
                     Exception = capturedException?.Message,
                     CorrelationId = correlationId,
+                    TraceId = traceId,
+                    SpanId = spanId,
+                    ParentSpanId = parentSpanId,
+                    TraceParent = traceParent ?? string.Empty,
+                    TraceState = traceState ?? string.Empty,
+                    Baggage = baggage ?? string.Empty,
                     ServiceName = _options.ServiceName,
                     EnvironmentName = _options.EnvironmentName,
-                    RequestSizeBytes = GetSizeInBytes(requestBody),
-                    ResponseSizeBytes = GetSizeInBytes(responseBody),
-                    RequestContentType = context.Request.ContentType,
-                    ResponseContentType = context.Response.ContentType,
                     RequestBodyCaptured = requestBodyCaptured,
                     ResponseBodyCaptured = responseBodyCaptured,
                     RequestBodySkippedReason = requestBodySkippedReason,
                     ResponseBodySkippedReason = responseBodySkippedReason,
-                    ClientIp = context.Connection.RemoteIpAddress?.ToString() ?? string.Empty,
-                    UserAgent = context.Request.Headers.UserAgent.ToString(),
+                    ClientIp = anonymizedClientIp,
+                    UserAgent = anonymizedUserAgent,
                 };
 
                 await _queue.EnqueueAsync(capturedRequest);
+
+                if (_options.EnablePrivacyAudit && _options.EnablePiiMasking)
+                {
+                    var totalMasks = maskedHeaderCount + maskedQueryParameterCount + maskedRequestBodyFieldCount + maskedResponseBodyFieldCount;
+                    if (totalMasks > 0)
+                    {
+                        _privacyAuditStore.Add(new PrivacyAuditEntry(
+                            TimestampUtc: DateTime.UtcNow,
+                            Method: context.Request.Method,
+                            Path: context.Request.Path,
+                            CorrelationId: correlationId,
+                            MaskedHeaders: maskedHeaderCount,
+                            MaskedQueryParameters: maskedQueryParameterCount,
+                            MaskedRequestBodyFields: maskedRequestBodyFieldCount,
+                            MaskedResponseBodyFields: maskedResponseBodyFieldCount,
+                            ClientIpAnonymized: clientIpAnonymized,
+                            UserAgentAnonymized: userAgentAnonymized,
+                            RedactionValue: GetRedactionValue()), _options.PrivacyAuditMaxEntries);
+                    }
+                }
 
                 _logger.LogInformation("FootLook captured request {Method} {Path} with status {StatusCode} in {Duration}ms",
                     context.Request.Method,
@@ -372,40 +471,191 @@ namespace FootLook.Core.Middleware
                 path.StartsWith(ignoredPath, StringComparison.OrdinalIgnoreCase));
         }
 
-        private Dictionary<string, string> CaptureHeaders(HttpContext context)
+        private Dictionary<string, string> CaptureHeaders(HttpContext context, out int maskedCount)
         {
-            return context.Request.Headers
-                .ToDictionary(h => h.Key,
-                              h =>
-                              {
-                                  if (_options.SensitiveHeaders.Any(sensitive =>
-                                  string.Equals(h.Key, sensitive, StringComparison.OrdinalIgnoreCase)))
-                                  {
-                                      return "[REDACTED]";
-                                  }
+            maskedCount = 0;
+            var redaction = GetRedactionValue();
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-                                  return string.Join(", ", h.Value.ToArray());
-                              });
+            foreach (var header in context.Request.Headers)
+            {
+                if (_options.EnablePiiMasking && IsSensitiveHeaderName(header.Key))
+                {
+                    maskedCount++;
+                    result[header.Key] = redaction;
+                    continue;
+                }
+
+                result[header.Key] = string.Join(", ", header.Value.ToArray());
+            }
+
+            return result;
         }
 
-        private string MaskSensitiveBodyFields(string body)
+        private string MaskSensitiveBodyFields(string body, out int maskedFieldCount)
         {
+            maskedFieldCount = 0;
+
             if (string.IsNullOrEmpty(body))
             {
                 return body;
             }
-            //foreach of the sensitive fields specified in the options, we use a regular expression to find and replace the value of that field in the body
-            //with a placeholder like [REDACTED]. This helps to ensure that sensitive information is not stored or logged in its original form, enhancing security and privacy.
+
+            if (!_options.EnablePiiMasking)
+            {
+                return body;
+            }
+
+            var redaction = GetRedactionValue();
+
             foreach (var sensitiveField in _options.SensitiveBodyFields)
             {
-                body = System.Text.RegularExpressions.Regex.Replace(
+                if (string.IsNullOrWhiteSpace(sensitiveField))
+                {
+                    continue;
+                }
+
+                var escapedField = Regex.Escape(sensitiveField.Trim());
+                var jsonPattern = $"(\"{escapedField}\"\\s*:\\s*)(\".*?\"|[^,\\}}\\]]+)";
+                var queryPattern = $"((?:^|[&?]){escapedField}=)([^&\\s]*)";
+
+                maskedFieldCount += Regex.Matches(body, jsonPattern, RegexOptions.IgnoreCase | RegexOptions.Singleline).Count;
+                maskedFieldCount += Regex.Matches(body, queryPattern, RegexOptions.IgnoreCase).Count;
+
+                body = Regex.Replace(
                     body,
-                    $"\"{sensitiveField}\"\\s*:\\s*\".*?\"",
-                    $"\"{sensitiveField}\":\"[REDACTED]\"",
-                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    jsonPattern,
+                    m => $"{m.Groups[1].Value}\"{redaction}\"",
+                    RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
+                body = Regex.Replace(
+                    body,
+                    queryPattern,
+                    m => $"{m.Groups[1].Value}{redaction}",
+                    RegexOptions.IgnoreCase);
             }
 
             return body;
+        }
+
+        private string MaskPathAndQuery(HttpContext context, out int maskedQueryCount)
+        {
+            maskedQueryCount = 0;
+            var path = context.Request.Path.Value ?? string.Empty;
+            if (!context.Request.QueryString.HasValue)
+            {
+                return path;
+            }
+
+            if (!_options.EnablePiiMasking)
+            {
+                return path + context.Request.QueryString.Value;
+            }
+
+            var redaction = GetRedactionValue();
+
+            var maskedValues = new List<KeyValuePair<string, string>>();
+            foreach (var queryItem in context.Request.Query)
+            {
+                var isSensitive = IsSensitiveQueryParameter(queryItem.Key);
+
+                if (isSensitive)
+                {
+                    foreach (var _ in queryItem.Value)
+                    {
+                        maskedQueryCount++;
+                        maskedValues.Add(new KeyValuePair<string, string>(queryItem.Key, redaction));
+                    }
+
+                    continue;
+                }
+
+                foreach (var queryValue in queryItem.Value)
+                {
+                    maskedValues.Add(new KeyValuePair<string, string>(queryItem.Key, queryValue));
+                }
+            }
+
+            var maskedQuery = QueryString.Create(maskedValues);
+            return path + maskedQuery.Value;
+        }
+
+        private string GetRedactionValue()
+        {
+            return string.IsNullOrWhiteSpace(_options.RedactionValue)
+                ? "[REDACTED]"
+                : _options.RedactionValue;
+        }
+
+        private bool IsSensitiveHeaderName(string headerName)
+        {
+            foreach (var sensitive in _options.SensitiveHeaders)
+            {
+                if (string.Equals(sensitive, headerName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool IsSensitiveQueryParameter(string queryParameterName)
+        {
+            foreach (var sensitive in _options.SensitiveQueryParameters)
+            {
+                if (string.Equals(sensitive, queryParameterName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private string MaskClientIp(string? clientIp, out bool anonymized)
+        {
+            anonymized = false;
+
+            if (string.IsNullOrWhiteSpace(clientIp))
+            {
+                return string.Empty;
+            }
+
+            if (!_options.EnablePiiMasking || !_options.AnonymizeClientIp)
+            {
+                return clientIp;
+            }
+
+            anonymized = true;
+            return HashForPrivacy(clientIp);
+        }
+
+        private string MaskUserAgent(string? userAgent, out bool anonymized)
+        {
+            anonymized = false;
+
+            if (string.IsNullOrWhiteSpace(userAgent))
+            {
+                return string.Empty;
+            }
+
+            if (!_options.EnablePiiMasking || !_options.AnonymizeUserAgent)
+            {
+                return userAgent;
+            }
+
+            anonymized = true;
+            return HashForPrivacy(userAgent);
+        }
+
+        private string HashForPrivacy(string value)
+        {
+            var salt = _options.PrivacyHashSalt ?? string.Empty;
+            var raw = string.IsNullOrEmpty(salt) ? value : $"{salt}:{value}";
+            var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
+            var hash = Convert.ToHexString(bytes).ToLowerInvariant();
+            return $"sha256:{hash[..16]}";
         }
 
         private bool ShouldCaptureMethod(HttpContext context)

@@ -5,90 +5,96 @@ using MongoDB.Driver;
 
 namespace FootLook.Core.Sinks;
 
-public class MongoSink : IShadowSink
+public class MongoSink /*: IShadowSink*/
 {
-    private readonly IMongoCollection<MongoCapturedRequest> _collection;
+    //private readonly IMongoCollection<MongoCapturedRequest> _collection;
 
-    public MongoSink(FootLookOptions options)
-    {
-        var client = new MongoClient(options.MongoConnectionString);
-        var database = client.GetDatabase(options.MongoDatabaseName);
+    //public MongoSink(FootLookOptions options)
+    //{
+    //    if (options.UseMongoSink && string.IsNullOrWhiteSpace(options.MongoConnectionString))
+    //    {
+    //        throw new InvalidOperationException(
+    //            "FootLook MongoSink is enabled, but FootLook:MongoConnectionString is missing or empty.");
+    //    }
 
-        _collection = database.GetCollection<MongoCapturedRequest>(
-            options.MongoCollectionName);
-    }
+    //    var client = new MongoClient(options.MongoConnectionString);
+    //    var database = client.GetDatabase(options.MongoDatabaseName);
 
-    public async Task WriteAsync(CapturedRequest request)
-    {
-        Console.WriteLine($"[MongoSink] Writing {request.Method} {request.Path}");
+    //    _collection = database.GetCollection<MongoCapturedRequest>(
+    //        options.MongoCollectionName);
+    //}
 
-        var document = new MongoCapturedRequest
-        {
-            Id = request.Id.ToString(),
-            TimestampUtc = request.TimestampUtc,
-            Method = request.Method,
-            Path = request.Path,
-            Headers = request.Headers,
-            RequestBody = request.RequestBody,
-            ResponseBody = request.ResponseBody,
-            StatusCode = request.StatusCode,
-            DurationMs = request.DurationMs,
-            Exception = request.Exception,
-            CorrelationId = request.CorrelationId,
-            ServiceName = request.ServiceName,
-            EnvironmentName = request.EnvironmentName,
-            RequestSizeBytes = request.RequestSizeBytes,
-            ResponseSizeBytes = request.ResponseSizeBytes,
-            RequestContentType = request.RequestContentType,
-            ResponseContentType = request.ResponseContentType,
-            RequestBodyCaptured = request.RequestBodyCaptured,
-            ResponseBodyCaptured = request.ResponseBodyCaptured,
-            RequestBodySkippedReason = request.RequestBodySkippedReason,
-            ResponseBodySkippedReason = request.ResponseBodySkippedReason,
-            ClientIp = request.ClientIp,
-            UserAgent = request.UserAgent
-        };
+    //public async Task WriteAsync(CapturedRequest request)
+    //{
+    //    Console.WriteLine($"[MongoSink] Writing {request.Method} {request.Path}");
 
-        await _collection.InsertOneAsync(document);
+    //    var document = new MongoCapturedRequest
+    //    {
+    //        Id = request.Id.ToString(),
+    //        TimestampUtc = request.TimestampUtc,
+    //        Method = request.Method,
+    //        Path = request.Path,
+    //        Headers = request.Headers,
+    //        RequestBody = request.RequestBody,
+    //        ResponseBody = request.ResponseBody,
+    //        StatusCode = request.StatusCode,
+    //        DurationMs = request.DurationMs,
+    //        Exception = request.Exception,
+    //        CorrelationId = request.CorrelationId,
+    //        ServiceName = request.ServiceName,
+    //        EnvironmentName = request.EnvironmentName,
+    //        RequestSizeBytes = request.RequestSizeBytes,
+    //        ResponseSizeBytes = request.ResponseSizeBytes,
+    //        RequestContentType = request.RequestContentType,
+    //        ResponseContentType = request.ResponseContentType,
+    //        RequestBodyCaptured = request.RequestBodyCaptured,
+    //        ResponseBodyCaptured = request.ResponseBodyCaptured,
+    //        RequestBodySkippedReason = request.RequestBodySkippedReason,
+    //        ResponseBodySkippedReason = request.ResponseBodySkippedReason,
+    //        ClientIp = request.ClientIp,
+    //        UserAgent = request.UserAgent
+    //    };
 
-        Console.WriteLine("[MongoSink] Written successfully");
-    }
+    //    await _collection.InsertOneAsync(document);
 
-    private class MongoCapturedRequest
-    {
-        public string Id { get; set; } = string.Empty;
-        public DateTime TimestampUtc { get; set; }
+    //    Console.WriteLine("[MongoSink] Written successfully");
+    //}
 
-        public string Method { get; set; } = string.Empty;
-        public string Path { get; set; } = string.Empty;
+    //private class MongoCapturedRequest
+    //{
+    //    public string Id { get; set; } = string.Empty;
+    //    public DateTime TimestampUtc { get; set; }
 
-        public Dictionary<string, string> Headers { get; set; } = new();
+    //    public string Method { get; set; } = string.Empty;
+    //    public string Path { get; set; } = string.Empty;
 
-        public string? RequestBody { get; set; }
-        public string? ResponseBody { get; set; }
+    //    public Dictionary<string, string> Headers { get; set; } = new();
 
-        public int StatusCode { get; set; }
-        public long DurationMs { get; set; }
+    //    public string? RequestBody { get; set; }
+    //    public string? ResponseBody { get; set; }
 
-        public string? Exception { get; set; }
-        public string CorrelationId { get; set; } = string.Empty;
+    //    public int StatusCode { get; set; }
+    //    public long DurationMs { get; set; }
 
-        public string ServiceName { get; set; } = string.Empty;
-        public string EnvironmentName { get; set; } = string.Empty;
+    //    public string? Exception { get; set; }
+    //    public string CorrelationId { get; set; } = string.Empty;
 
-        public long RequestSizeBytes { get; set; }
-        public long ResponseSizeBytes { get; set; }
+    //    public string ServiceName { get; set; } = string.Empty;
+    //    public string EnvironmentName { get; set; } = string.Empty;
 
-        public string? RequestContentType { get; set; }
-        public string? ResponseContentType { get; set; }
+    //    public long RequestSizeBytes { get; set; }
+    //    public long ResponseSizeBytes { get; set; }
 
-        public bool RequestBodyCaptured { get; set; }
-        public bool ResponseBodyCaptured { get; set; }
+    //    public string? RequestContentType { get; set; }
+    //    public string? ResponseContentType { get; set; }
 
-        public string? RequestBodySkippedReason { get; set; }
-        public string? ResponseBodySkippedReason { get; set; }
+    //    public bool RequestBodyCaptured { get; set; }
+    //    public bool ResponseBodyCaptured { get; set; }
 
-        public string? ClientIp { get; set; }
-        public string? UserAgent { get; set; }
-    }
+    //    public string? RequestBodySkippedReason { get; set; }
+    //    public string? ResponseBodySkippedReason { get; set; }
+
+    //    public string? ClientIp { get; set; }
+    //    public string? UserAgent { get; set; }
+    //}
 }

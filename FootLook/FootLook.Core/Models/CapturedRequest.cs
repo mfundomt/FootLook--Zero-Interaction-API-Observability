@@ -36,15 +36,27 @@ namespace FootLook.Core.Models
 
         public string CorrelationId { get; init; } = string.Empty;
 
+        public string TraceId { get; init; } = string.Empty;
+
+        public string SpanId { get; init; } = string.Empty;
+
+        public string ParentSpanId { get; init; } = string.Empty;
+
+        public string TraceParent { get; init; } = string.Empty;
+
+        public string TraceState { get; init; } = string.Empty;
+
+        public string Baggage { get; init; } = string.Empty;
+
         public string ServiceName { get; init; } = string.Empty;
-        public string EnvironmentName { get; init; } = string.Empty;    
+        public string EnvironmentName { get; init; } = string.Empty;
 
         public long RequestSizeBytes { get; init; }
         public long ResponseSizeBytes { get; init; }
 
-        public string? RequestContentType { get; init; }    
+        public string? RequestContentType { get; init; }
 
-        public string ? ResponseContentType { get; init; }
+        public string? ResponseContentType { get; init; }
 
         public bool RequestBodyCaptured { get; init; }
 

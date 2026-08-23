@@ -18,5 +18,8 @@ namespace FootLook.Data.Repositories
             int? minStatusCode = null,
             long? minDuration = null,
             string? correlationId = null);
+
+        // Server-side pagination support
+        Task<(IReadOnlyList<CapturedRequest> Items, long TotalCount)> GetRecentPagedAsync(int page, int pageSize);
     }
 }

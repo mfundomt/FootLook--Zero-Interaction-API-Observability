@@ -99,4 +99,22 @@ public class MongoCaptureRepository : ICaptureRepository
             .Limit(100)
             .ToListAsync();
     }
+
+    public async Task<(IReadOnlyList<CapturedRequest> Items, long TotalCount)> GetRecentPagedAsync(int page, int pageSize)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var filter = Builders<CapturedRequest>.Filter.Empty;
+        var totalCount = await _collection.CountDocumentsAsync(filter);
+
+        var items = await _collection
+            .Find(filter)
+            .SortByDescending(x => x.TimestampUtc)
+            .Skip((page - 1) * pageSize)
+            .Limit(pageSize)
+            .ToListAsync();
+
+        return (items, totalCount);
+    }
 }

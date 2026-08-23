@@ -22,6 +22,7 @@ namespace FootLook.Core.Extensions
             configure?.Invoke(options);
 
             services.AddSingleton(options);
+            services.AddSingleton<CaptureRuntimeState>();
 
             // Register the ShadowQueue as a singleton service, meaning there will be only one instance of it throughout the application's lifetime.
             services.AddSingleton<IShadowQueue, ShadowQueue>();
@@ -31,9 +32,13 @@ namespace FootLook.Core.Extensions
             services.AddSingleton<FileSink>();
             services.AddSingleton<InMemorySink>();
             services.AddSingleton<CaptureEvents>();
+            services.AddSingleton<PrivacyAuditStore>();
+            services.AddSingleton<CaptureReliabilityState>();
+            services.AddSingleton<FootLookDeveloperExperienceService>();
+            services.AddSingleton<ProductOutcomeMetricsService>();
             services.AddSingleton<IShadowCaptureStore>(provider => provider.GetRequiredService<InMemorySink>());
             services.AddSingleton<CaptureHistoryService>();
-            services.AddSingleton<MongoSink>();
+            //services.AddSingleton<MongoSink>();
 
 
             //add a composite sink that combines multiple IShadowSink implementations, allowing the captured requests to be processed by all registered sinks. This way,
@@ -48,28 +53,30 @@ namespace FootLook.Core.Extensions
 
                 return new CompositeSink(sinks);
             });
-
-            services.AddSingleton<IShadowSink>(provider =>
-            {
-                var options = provider.GetRequiredService<FootLookOptions>();
-
-                var sinks = new List<IShadowSink>
-            {
-                 provider.GetRequiredService<InMemorySink>(),
-                 provider.GetRequiredService<FileSink>()
-            };
-
-                if (options.UseMongoSink)
-                {
-                    sinks.Add(provider.GetRequiredService<MongoSink>());
-                }
-
-                return new CompositeSink(sinks);
-            });
             // Register the ShadowBackgroundWorker as a hosted service, which will run in the background and process captured requests from the queue.
             services.AddHostedService<ShadowBackgroundWorker>();
             return services;
 
+            #region Validation of FootLookOptions
+            // Removing this reliance for now since it is for a database sink, we can add it back later for phase 2. For now, we will just use the in-memory and file sinks.
+            //services.AddSingleton<IShadowSink>(provider =>
+            //{
+            //    var options = provider.GetRequiredService<FootLookOptions>();
+
+            //    var sinks = new List<IShadowSink>
+            //{
+            //     provider.GetRequiredService<InMemorySink>(),
+            //     provider.GetRequiredService<FileSink>()
+            //};
+
+            //    if (options.UseMongoSink)
+            //    {
+            //        sinks.Add(provider.GetRequiredService<MongoSink>());
+            //    }
+
+            //    return new CompositeSink(sinks);
+            //});
+            #endregion
         }
     }
 }

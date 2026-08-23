@@ -4,15 +4,17 @@ using FootLook.Core.Options;
 using FootLook.Core.Hubs;
 using FootLook.Data.Repositories;
 using FootLook.Data.Extensions;
+using FootLook.Core.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-
+;
 //Register SignalR for real-time updates
 builder.Services.AddSignalR();
+builder.Services.AddFootLookMongoRepository();
 
 
 builder.Services.AddFootLook(options =>
@@ -30,25 +32,26 @@ builder.Services.AddFootLook(options =>
     options.ServiceName = "FootLook.Demo";
     options.EnvironmentName = builder.Environment.EnvironmentName;
 
+    // Ignore certain paths from being captured
     options.IgnoredPaths.Add("/footlook");
     options.IgnoredPaths.Add("/footlook.html");
+    options.IgnoredPaths.Add("/footlook/pause");
+    options.IgnoredPaths.Add("/footlook/resume");
     options.IgnoredPaths.Add("/swagger");
     options.IgnoredPaths.Add("/favicon.ico");
     options.IgnoredPaths.Add("/.well-known");
+    options.IgnoredPaths.Add("/pause");
 
+    // Allow CORS for the FootLook endpoints
     options.AllowedMethods.Add("GET");
     options.AllowedMethods.Add("POST");
     options.AllowedMethods.Add("PATCH");
     options.AllowedMethods.Add("PUT");
-    options.AllowedMethods.Add("DELETE");
+//  options.AllowedMethods.Add("DELETE");
 });
 
-builder.Services.AddFootLookMongoRepository();
-
-//register the dependency
-//builder.Services.AddSingleton<IShadowSink, InMemorySink>();
-//builder.Services.AddSingleton<IShadowQueue, ShadowQueue>();
-//builder.Services.AddHostedService<ShadowBackgroundWorker>();
+// TODO: Add MongoDB repository registration here if needed
+//builder.Services.AddFootLookMongoRepository();
 
 var app = builder.Build();
 
@@ -61,6 +64,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
+
 #region FootLook Middleware Flow (Manual for testing)
 //var sink = new InMemorySink();
 
@@ -85,6 +89,18 @@ app.UseFootLook();
 
 var footlookOptions = app.Services.GetRequiredService<FootLookOptions>();
 app.MapFootLookEndpoints(footlookOptions);
+
+app.MapPost("/pause", (CaptureEvents events) =>
+{
+    events.Pause();
+    return Results.Ok(new { Message = "FootLook paused" });
+});
+
+app.MapPost("/resume", (CaptureEvents events) =>
+{
+    events.Resume();
+    return Results.Ok(new { Message = "FootLook resumed" });
+});
 
 app.MapGet("/", () =>
 {
@@ -113,14 +129,14 @@ app.MapGet("/error", () =>
 
 app.MapHub<CaptureHub>("/footlook/live");
 
-app.MapGet("/mongo-test",
-    async (ICaptureRepository repository) =>
-    {
-        var captures =
-            await repository.GetRecentAsync(10);
+//app.MapGet("/mongo-test",
+//    async (ICaptureRepository repository) =>
+//    {
+//        var captures =
+//            await repository.GetRecentAsync(10);
 
-        return Results.Ok(captures);
-    });
+//        return Results.Ok(captures);
+//    });
 
 
 var events = app.Services.GetRequiredService<CaptureEvents>();
@@ -140,3 +156,4 @@ public class TestRequest
 {
     public string Message { get; set; } = string.Empty;
 }
+

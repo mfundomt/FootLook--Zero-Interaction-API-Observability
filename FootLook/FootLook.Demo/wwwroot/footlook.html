@@ -1,754 +1,2380 @@
 ﻿<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>FootLook Live Dashboard</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FootLook — Real-time Observability</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
+
+        :root {
+            --bg: #f5f9ff;
+            --panel: #ffffff;
+            --panel-alt: #f8fbff;
+            --panel-raised: #ffffff;
+            --border: #d0d7de;
+            --border-soft: #e6edf5;
+            --text-primary: #1f2328;
+            --text-secondary: #3b424a;
+            --text-muted: #57606a;
+            --accent: #22C55E;
+            --chase: #f59e0b;
+            --chase-soft: rgba(245, 158, 11, 0.14);
+            --accent-soft: rgba(0,120,212,0.14);
+            --entra: #F97316;
+            --entra-soft: rgba(249, 115, 22, 0.14);
+            --live: #0078d4;
+            --live-soft: rgba(0,120,212,0.14);
+            --lime: #22C55E;
+            --lime-soft: rgba(34, 197, 94, 0.14);
+            --warn: #9a6700;
+            --warn-soft: rgba(154,103,0,0.16);
+            --crit: #d13438;
+            --crit-soft: rgba(209,52,56,0.14);
+            --ok-text: var(--text-primary);
+            --radius: 10px;
+            --radius-sm: 6px;
+            --mono: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            --sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            --font-primary: var(--sans);
+            --font-secondary: var(--mono);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+        }
+
         body {
-            font-family: Arial, sans-serif;
-            background: #0f172a;
-            color: #e5e7eb;
-            padding: 24px;
+            background: radial-gradient(1200px 600px at 15% -10%, rgba(0,120,212,0.12), transparent 60%), var(--bg);
+            color: var(--text-primary);
+            font-family: var(--font-primary);
+            -webkit-font-smoothing: antialiased;
+            min-height: 100vh;
         }
 
-        button.active {
-            background: #2563eb;
-            color: white;
+        .container {
+            max-width: 1180px;
+            margin: 0 auto;
+            padding: 32px 24px 80px;
         }
 
-        button.method-active {
-            background: #059669;
-            color: white;
+        a, button, input {
+            font-family: inherit;
+        }
+
+        button {
+            cursor: pointer;
+        }
+
+        :focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+            border-radius: 4px;
+        }
+
+        .brand {
+            font-family: var(--font-secondary);
+            font-size: 11px;
+            letter-spacing: .18em;
+            font-weight: 600;
+            color: var(--accent);
+            text-transform: uppercase;
+            margin: 0 0 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+            .brand::before {
+                content: '';
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                background: var(--accent);
+                box-shadow: 0 0 8px var(--accent);
+            }
+
+        h1 {
+            font-size: 22px;
+            font-weight: 600;
+            margin: 0 0 10px;
+            letter-spacing: -.01em;
+            color: var(--text-primary);
+        }
+
+        .status-line {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-secondary);
+            font-size: 13.5px;
+            margin-bottom: 22px;
+        }
+
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            position: relative;
+            flex-shrink: 0;
+        }
+
+            .live-dot.live {
+                background: var(--live);
+                box-shadow: 0 0 0 0 rgba(0,120,212,0.45);
+                animation: pulse 1.8s ease-out infinite;
+            }
+
+            .live-dot.paused {
+                background: var(--text-muted);
+            }
+
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(0,120,212,0.45);
+            }
+
+            70% {
+                box-shadow: 0 0 0 8px rgba(0,120,212,0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(0,120,212,0);
+            }
+        }
+
+        .status-line .site {
+            color: var(--text-muted);
+        }
+
+            .status-line .site::before {
+                content: '·';
+                margin: 0 8px;
+                color: var(--text-muted);
+            }
+
+        .connect-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 28px;
+            max-width: 520px;
+        }
+
+            .connect-bar input {
+                flex: 1;
+                background: var(--panel);
+                border: 1px solid var(--border);
+                color: var(--text-primary);
+                border-radius: var(--radius-sm);
+                padding: 10px 12px;
+                font-size: 13.5px;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            }
+
+                .connect-bar input::placeholder {
+                    color: var(--text-muted);
+                }
+
+        .btn {
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: var(--panel);
+            color: var(--text-primary);
+            padding: 10px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            white-space: nowrap;
+            transition: background .15s,border-color .15s,color .15s;
+        }
+
+            .btn:hover {
+                border-color: var(--accent);
+                background: var(--panel-raised);
+            }
+
+        .btn-accent {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: var(--bg);
+        }
+
+            .btn-accent:hover {
+                background: var(--accent);
+                border-color: var(--accent);
+            }
+
+        .eyebrow {
+            font-family: var(--font-secondary);
+            font-size: 10.5px;
+            letter-spacing: .14em;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(6,1fr);
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .kpi-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 6px 16px;
+            min-width: 0;
+        }
+
+            .kpi-card.hero {
+                grid-column: span 2;
+                padding: 16px 18px;
+            }
+
+            .kpi-card.c-total {
+                grid-column: span 1;
+            }
+
+            .kpi-card.c-avgdur {
+                grid-column: span 1;
+            }
+
+            .kpi-card.c-slow {
+                grid-column: span 1;
+            }
+
+            .kpi-card.c-rpm {
+                grid-column: span 1;
+            }
+
+            .kpi-card.c-confidence {
+                grid-column: span 1;
+            }
+
+            .kpi-card.c-top {
+                grid-column: span 4;
+            }
+
+        .kpi-label {
+            font-family: 'Franklin Gothic Medium', 'Arial Narrow', Arial, sans-serif;
+            font-size: 10.5px;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .kpi-value {
+            font-family: var(--font-secondary);
+            font-size: 22px;
+            font-weight: 600;
+            color: var(--text-primary);
+            line-height: 1;
+        }
+
+        .kpi-card.hero .kpi-value {
+            font-size: 32px;
+        }
+
+        .kpi-row-bottom {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            margin-top: 10px;
+            gap: 10px;
+        }
+
+        .sev-tag {
+            font-family: var(--font-secondary);
+            font-size: 9.5px;
+            letter-spacing: .08em;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 20px;
+            white-space: nowrap;
+        }
+
+            .sev-tag.sev-ok {
+                color: var(--text-secondary);
+                background: rgba(0,120,212,0.08);
+            }
+
+            .sev-tag.sev-warn {
+                color: var(--warn);
+                background: var(--warn-soft);
+            }
+
+            .sev-tag.sev-crit {
+                color: var(--crit);
+                background: var(--crit-soft);
+            }
+
+        .kpi-card.sev-warn {
+            border-color: var(--warn);
+        }
+
+            .kpi-card.sev-warn .kpi-value {
+                color: var(--warn);
+            }
+
+        .kpi-card.sev-crit {
+            border-color: var(--crit);
+        }
+
+            .kpi-card.sev-crit .kpi-value {
+                color: var(--crit);
+            }
+
+        .kpi-card.sev-ok {
+            border-color: var(--border);
+        }
+
+        .spark {
+            width: 64px;
+            height: 22px;
+            flex-shrink: 0;
+        }
+
+            .spark .spark-line {
+                fill: none;
+                stroke: currentColor;
+                stroke-width: 1.6;
+                opacity: .85;
+            }
+
+        .kpi-card.hero.sev-ok .spark {
+            color: var(--text-muted);
+        }
+
+        .kpi-card.hero.sev-warn .spark {
+            color: var(--warn);
+        }
+
+        .kpi-card.hero.sev-crit .spark {
+            color: var(--crit);
+        }
+
+        .ep-row {
+            display: grid;
+            grid-template-columns: 1fr 90px 32px;
+            align-items: center;
+            gap: 10px;
+            padding: 4px 0;
+        }
+
+        .ep-path {
+            font-family: var(--font-secondary);
+            font-size: 12px;
+            color: var(--text-secondary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .ep-bar-track {
+            height: 5px;
+            background: var(--border-soft);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .ep-bar {
+            height: 100%;
+            background: var(--accent);
+            border-radius: 4px;
+        }
+
+        .ep-count {
+            font-family: var(--font-secondary);
+            font-size: 12px;
+            color: var(--text-muted);
+            text-align: right;
+        }
+
+        .empty-inline {
+            color: var(--text-muted);
+            font-size: 12.5px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 6px 0;
+        }
+
+        .section {
+            background: var(--panel-alt);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius);
+            padding: 16px 18px;
+            margin-bottom: 16px;
+        }
+
+        .section-flat {
+            padding: 0;
+            background: none;
+            border: none;
+            margin-bottom: 20px;
+        }
+
+        .filter-groups {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 22px;
+            align-items: flex-start;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+            .filter-group .pills {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 6px;
+            }
+
+        .search-group {
+            margin-left: auto;
+            min-width: 200px;
+        }
+
+            .search-group input {
+                width: 100%;
+                background: var(--panel);
+                border: 1px solid var(--border);
+                color: var(--text-primary);
+                border-radius: 20px;
+                padding: 8px 14px;
+                font-size: 12.5px;
+                font-family: var(--font-secondary);
+            }
+
+                .search-group input::placeholder {
+                    color: var(--text-muted);
+                }
+
+        .pill {
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-secondary);
+            padding: 6px 13px;
+            font-size: 12.5px;
+            font-weight: 500;
+            transition: all .15s;
+        }
+
+        .failure-pill {
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-secondary);
+            padding: 6px 13px;
+            font-size: 12.5px;
+            font-weight: 500;
+            transition: all .15s;
+        }
+
+        .slow-pill {
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-secondary);
+            padding: 6px 13px;
+            font-size: 12.5px;
+            font-weight: 500;
+            transition: all .15s;
+        }
+
+        .content-pill {
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-secondary);
+            padding: 6px 13px;
+            font-size: 12.5px;
+            font-weight: 500;
+            transition: all .15s;
+        }
+
+        .get-pill {
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-secondary);
+            padding: 6px 13px;
+            font-size: 12.5px;
+            font-weight: 500;
+            transition: all .15s;
+        }
+
+        .patch-pill {
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-secondary);
+            padding: 6px 13px;
+            font-size: 12.5px;
+            font-weight: 500;
+            transition: all .15s;
+        }
+
+
+        .pill:hover {
+            border-color: var(--accent);
+            color: var(--text-primary);
+        }
+
+        .failure-pill:hover {
+            border-color: var(--crit);
+            color: var(--text-primary);
+        }
+
+        .slow-pill:hover {
+            border-color: var(--chase);
+            color: var(--text-primary);
+        }
+
+        .content-pill:hover {
+            border-color: var(--entra);
+            color: var(--text-primary);
+        }
+
+        .get-pill:hover {
+            border-color: var(--live);
+            color: var(--text-primary);
+        }
+
+        .patch-pill:hover {
+            border-color: var(--lime);
+            color: var(--text-primary);
+        }
+
+        .pill.active {
+            background: var(--accent-soft);
+            border-color: var(--accent);
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        .failure-pill.active {
+            background: var(--crit-soft);
+            border-color: var(--crit);
+            color: var(--crit);
+            font-weight: 600;
+        }
+
+        .slow-pill.active {
+            background: var(--chase-soft);
+            border-color: var(--chase);
+            color: var(--chase);
+            font-weight: 600;
+        }
+
+        .content-pill.active {
+            background: var(--entra-soft);
+            border-color: var(--entra);
+            color: var(--entra);
+            font-weight: 600;
+        }
+
+        .get-pill.active {
+            background: var(--live-soft);
+            border-color: var(--live);
+            color: var(--live);
+            font-weight: 600;
+        }
+
+        .patch-pill.active {
+            background: var(--lime-soft);
+            border-color: var(--lime);
+            color: var(--lime);
+            font-weight: 600;
         }
 
         .toolbar {
             display: flex;
             flex-wrap: wrap;
-            gap: 10px;
-            margin: 18px 0;
+            gap: 26px;
+            align-items: flex-end;
+            justify-content: space-between;
+        }
+
+        .toolbar-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+            .toolbar-group .btns {
+                display: flex;
+                gap: 8px;
+                flex-wrap: wrap;
+            }
+
+        .btn-ghost {
+            background: transparent;
+        }
+
+        .btn-live {
+            display: flex;
             align-items: center;
+            gap: 7px;
         }
 
-            .toolbar button,
-            .action-bar button {
-                background: #111827;
-                color: #cbd5e1;
-                border: 1px solid #334155;
-                border-radius: 999px;
-                padding: 9px 14px;
-                font-size: 13px;
-                font-weight: 600;
-                cursor: pointer;
-                transition: all 0.2s ease;
+            .btn-live .dot-mini {
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                background: var(--live);
             }
 
-                .toolbar button:hover,
-                .action-bar button:hover {
-                    background: #1e293b;
-                    color: #ffffff;
-                    border-color: #38bdf8;
-                    transform: translateY(-1px);
-                }
+            .btn-live.is-paused .dot-mini {
+                background: var(--text-muted);
+            }
 
-                .toolbar button.active {
-                    background: #2563eb;
-                    color: #ffffff;
-                    border-color: #60a5fa;
-                    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
-                }
-
-                .toolbar button.method-active {
-                    background: #059669;
-                    color: #ffffff;
-                    border-color: #34d399;
-                    box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.25);
-                }
-
-        .divider {
-            width: 1px;
-            height: 32px;
-            background: #334155;
-            margin: 0 6px;
+        .danger-zone {
+            border: 1px dashed rgba(209,52,56,0.35);
+            border-radius: var(--radius);
+            padding: 10px 14px;
+            background: rgba(209,52,56,0.05);
         }
 
-        .action-bar {
+            .danger-zone .eyebrow {
+                color: var(--crit);
+                opacity: .85;
+            }
+
+        .btn-danger {
+            background: transparent;
+            border: 1px solid rgba(209,52,56,0.4);
+            color: var(--crit);
+        }
+
+            .btn-danger:hover {
+                background: rgba(209,52,56,0.1);
+                border-color: var(--crit);
+            }
+
+        .visible-results-bar {
             display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+            .visible-results-bar .kpi-label {
+                margin: 0;
+            }
+
+            .visible-results-bar .kpi-value {
+                font-size: 16px;
+            }
+
+        .chart-header {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+            .chart-header h2 {
+                font-size: 15px;
+                margin: 0;
+                font-weight: 600;
+                font-family: var(--font-primary);
+            }
+
+        .chart-sub {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 2px;
+            font-family: var(--font-secondary);
+        }
+
+        .chart-legend {
+            display: flex;
+            gap: 16px;
+            font-size: 11.5px;
+            color: var(--text-secondary);
+            font-family: var(--font-secondary);
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .legend-swatch {
+            width: 9px;
+            height: 9px;
+            border-radius: 2px;
+        }
+
+            .legend-swatch.success {
+                background: var(--accent);
+            }
+
+            .legend-swatch.redirect {
+                background: var(--chase)
+            }
+
+            .legend-swatch.error {
+                background: var(--crit);
+            }
+
+        .chart-wrap {
+            height: 230px;
+        }
+
+        .chart-svg {
+            width: 100%;
+            height: 100%;
+            overflow: visible;
+        }
+
+        .bar-success {
+            fill: var(--accent);
+            opacity: .85;
+        }
+
+        .bar-error {
+            fill: var(--crit);
+        }
+
+        .grid-line {
+            stroke: var(--border-soft);
+            stroke-width: 1;
+        }
+
+        .axis-label {
+            font-family: var(--font-secondary);
+            font-size: 10px;
+            fill: var(--text-muted);
+        }
+
+        .chart-empty {
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            color: var(--text-muted);
+            font-family: var(--font-secondary);
+            font-size: 13px;
+            border: 1px dashed var(--border);
+            border-radius: var(--radius-sm);
+        }
+
+        .empty-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            animation: pulse-muted 1.6s ease-in-out infinite;
+        }
+
+        @keyframes pulse-muted {
+            0%,100% {
+                opacity: .35;
+            }
+
+            50% {
+                opacity: 1;
+            }
+        }
+
+        .table-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 14px;
             flex-wrap: wrap;
             gap: 10px;
-            margin-bottom: 18px;
         }
 
-        #pathSearch {
-            background: #111827;
-            color: #e5e7eb;
-            border: 1px solid #334155 !important;
-            padding: 10px 14px !important;
-            border-radius: 999px !important;
-            outline: none;
-        }
-
-            #pathSearch:focus {
-                border-color: #38bdf8 !important;
-                box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
+            .table-header h2 {
+                font-size: 15px;
+                margin: 0;
+                font-weight: 600;
             }
 
-        h1 {
-            margin-bottom: 6px;
-        }
-
-        .subtitle, .muted {
-            color: #94a3b8;
-        }
-
-        .subtitle {
-            margin-bottom: 12px;
-        }
-
-        #connectionStatus {
-            margin-bottom: 24px;
-        }
-
-        #topEndpoints {
-            max-height: 120px;
-            overflow-y: auto;
-            padding-right: 4px;
-        }
-
-        .endpoint-item {
-            padding: 8px 0;
-            border-bottom: 1px solid #1f2937;
-        }
-
-            .endpoint-item:last-child {
-                border-bottom: none;
-            }
-
-         .endpoint-item {
-    padding: 8px 0;
-    border-bottom: 1px solid #1f2937;
-    cursor: pointer;
-}
-
-.endpoint-item:hover {
-    background: #1e293b;
-}
-
-        .cards {
+        .pagination {
             display: flex;
-            flex-wrap: wrap;
-            gap: 16px;
-            margin-bottom: 24px;
+            align-items: center;
+            gap: 10px;
+            font-size: 12.5px;
+            color: var(--text-secondary);
+            font-family: var(--font-secondary);
         }
 
-        .card {
-            background: #111827;
-            border: 1px solid #1f2937;
-            border-radius: 12px;
-            padding: 16px;
-            min-width: 160px;
+            .pagination button {
+                padding: 6px 12px;
+                font-size: 12px;
+            }
+
+                .pagination button:disabled {
+                    opacity: .35;
+                    cursor: not-allowed;
+                }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
         }
 
-        .card-title {
-            color: #94a3b8;
+        thead th {
+            text-align: left;
+            font-family: var(--font-secondary);
+            font-size: 10.5px;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            font-weight: 600;
+            padding: 0 12px 10px;
+            border-bottom: 1px solid var(--border-soft);
+        }
+
+        tbody td {
+            padding: 11px 12px;
+            border-bottom: 1px solid var(--border-soft);
             font-size: 13px;
         }
 
-        .card-value {
-            font-size: 28px;
-            font-weight: bold;
-            margin-top: 8px;
+        tbody tr.cap-row {
+            cursor: pointer;
+            transition: background .12s;
         }
 
-        .feed {
-            background: #111827;
-            border: 1px solid #1f2937;
-            border-radius: 12px;
-            overflow: hidden;
-        }
-
-        .row {
-            display: grid;
-            grid-template-columns: 90px 1fr 90px 100px 120px;
-            gap: 12px;
-            padding: 12px 16px;
-            border-bottom: 1px solid #1f2937;
-            align-items: center;
-        }
-
-            .row:last-child {
-                border-bottom: none;
+            tbody tr.cap-row:hover {
+                background: rgba(0,120,212,0.08);
             }
 
-        .method {
-            font-weight: bold;
-        }
+            tbody tr.cap-row.selected {
+                background: var(--accent-soft);
+            }
 
-        .badge {
-            border-radius: 999px;
-            padding: 4px 10px;
-            font-size: 12px;
+        tbody tr.empty-row td {
+            color: var(--text-muted);
             text-align: center;
-            font-weight: bold;
+            padding: 26px 12px;
+            font-family: var(--font-secondary);
+            font-size: 12.5px;
         }
 
-        .ok {
-            background: #064e3b;
-            color: #a7f3d0;
+        .mono {
+            font-family: var(--font-secondary);
         }
 
-        .fail {
-            background: #7f1d1d;
-            color: #fecaca;
+        .muted {
+            color: var(--text-muted);
         }
 
-        .slow {
-            color: #fbbf24;
-            font-weight: bold;
+        .path-cell {
+            color: var(--text-secondary);
         }
 
-        #rpmChart {
-            background: #111827;
-            border: 1px solid #1f2937;
-            border-radius: 12px;
-            margin-bottom: 24px;
+        .dur-slow {
+            color: var(--warn);
+        }
+
+        .method-badge {
+            font-family: var(--font-secondary);
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 2px 7px;
+        }
+
+        .status-badge {
+            font-family: var(--font-secondary);
+            font-size: 12px;
+            font-weight: 700;
+            padding: 3px 9px;
+            border-radius: 5px;
+            display: inline-block;
+        }
+
+            .status-badge.status-2xx {
+                color: var(--live);
+                background: var(--live-soft);
+            }
+
+            .status-badge.status-4xx {
+                color: var(--warn);
+                background: var(--warn-soft);
+            }
+
+            .status-badge.status-5xx {
+                color: var(--crit);
+                background: var(--crit-soft);
+            }
+
+            .status-badge.lg {
+                font-size: 14px;
+                padding: 5px 12px;
+            }
+
+        .confidence-badge {
+            font-family: var(--font-secondary);
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 999px;
+            display: inline-block;
+            border: 1px solid transparent;
+        }
+
+            .confidence-badge.high {
+                color: var(--live);
+                background: var(--live-soft);
+                border-color: rgba(0,120,212,0.2);
+            }
+
+            .confidence-badge.medium {
+                color: var(--warn);
+                background: var(--warn-soft);
+                border-color: rgba(154,103,0,0.2);
+            }
+
+            .confidence-badge.low {
+                color: var(--crit);
+                background: var(--crit-soft);
+                border-color: rgba(209,52,56,0.2);
+            }
+
+        .details-placeholder {
+            color: var(--text-muted);
+            font-family: var(--font-secondary);
+            font-size: 13px;
+            padding: 8px 0;
+        }
+
+        .details-head {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .details-title {
+            font-size: 14px;
+            color: var(--text-primary);
+        }
+
+        .details-grid {
+            display: grid;
+            grid-template-columns: repeat(4,1fr);
+            gap: 14px;
+            margin-bottom: 16px;
+        }
+
+        .detail-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .detail-label {
+            font-family: var(--font-secondary);
+            font-size: 10px;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+        }
+
+        .detail-value {
+            font-size: 13px;
+            color: var(--text-primary);
+        }
+
+        .details-json {
+            background: var(--panel);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius-sm);
+            padding: 12px 14px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            white-space: pre;
+            overflow-x: auto;
+        }
+
+        .toast-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 50;
+        }
+
+        .toast {
+            background: var(--panel-raised);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 11px 16px;
+            border-radius: var(--radius-sm);
+            font-size: 12.5px;
+            box-shadow: 0 8px 24px rgba(31,35,40,0.2);
+            opacity: 0;
+            transform: translateY(6px);
+            transition: opacity .25s, transform .25s;
+        }
+
+            .toast.show {
+                opacity: 1;
+                transform: translateY(0);
+            }
+
+        hr.divider {
+            border: none;
+            border-top: 1px solid var(--border-soft);
+            margin: 26px 0;
+        }
+
+        @media (max-width:900px) {
+            .kpi-grid {
+                grid-template-columns: repeat(2,1fr);
+            }
+
+            .kpi-card.hero {
+                grid-column: span 2;
+            }
+
+            .kpi-card.c-total, .kpi-card.c-avgdur, .kpi-card.c-slow, .kpi-card.c-rpm, .kpi-card.c-confidence {
+                grid-column: span 1;
+            }
+
+            .kpi-card.c-top {
+                grid-column: span 2;
+            }
+
+            .details-grid {
+                grid-template-columns: repeat(2,1fr);
+            }
+
+            .search-group {
+                margin-left: 0;
+                width: 100%;
+            }
+        }
+
+        @media (prefers-reduced-motion:reduce) {
+            .live-dot.live, .empty-dot {
+                animation: none;
+            }
         }
     </style>
 </head>
-
 <body>
-    <h1>FootLook Live Dashboard</h1>
-    <div class="subtitle">Real-time API observability stream</div>
-    <div id="connectionStatus" class="muted">Connecting...</div>
+    <div class="container">
 
-    <div class="cards">
-        <div class="card">
-            <div class="card-title">Total Requests</div>
-            <div id="totalRequests" class="card-value">0</div>
+
+        <h1>FootLook Live Dashboard</h1>
+        <div class="">
+            <span class="">Real-time observability stream.</span>
         </div>
 
-        <div class="card">
-            <div class="card-title">Failed Requests</div>
-            <div id="failedRequests" class="card-value">0</div>
+        <hr class="divider" />
+
+        <div class="connect-bar">
+            <input id="site-url-input" type="text" placeholder="Site url…" value="" />
+            <button id="connect-btn" class="btn btn-accent">Connect to site</button>
         </div>
 
-        <div class="card">
-            <div class="card-title">Average Duration</div>
-            <div id="avgDuration" class="card-value">0ms</div>
+        <div class="kpi-grid">
+            <div class="kpi-card c-total">
+                <div class="kpi-label">Total Requests</div>
+                <div class="kpi-value" id="kpi-total">0</div>
+            </div>
+
+            <div class="kpi-card hero c-failed" id="kpi-failed-card">
+                <div class="kpi-label">Failed Requests <span class="sev-tag sev-ok" id="kpi-failed-tag">HEALTHY</span></div>
+                <div class="kpi-row-bottom">
+                    <div class="kpi-value" id="kpi-failed">0</div>
+                    <svg class="spark" id="spark-failed" viewBox="0 0 64 22"></svg>
+                </div>
+            </div>
+
+            <div class="kpi-card c-avgdur" id="kpi-avgdur-card">
+                <div class="kpi-label">Average Duration</div>
+                <div class="kpi-value" id="kpi-avgdur">0ms</div>
+            </div>
+
+            <div class="kpi-card hero c-errorrate" id="kpi-errorrate-card">
+                <div class="kpi-label">Error Rate <span class="sev-tag sev-ok" id="kpi-errorrate-tag">HEALTHY</span></div>
+                <div class="kpi-row-bottom">
+                    <div class="kpi-value" id="kpi-errorrate">0%</div>
+                    <svg class="spark" id="spark-errorrate" viewBox="0 0 64 22"></svg>
+                </div>
+            </div>
+
+            <div class="kpi-card c-slow" id="kpi-slow-card">
+                <div class="kpi-label">Slow Requests</div>
+                <div class="kpi-value" id="kpi-slow">0</div>
+            </div>
+
+            <div class="kpi-card c-rpm">
+                <div class="kpi-label">Requests / Min</div>
+                <div class="kpi-value" id="kpi-rpm">0</div>
+            </div>
+
+            <div class="kpi-card c-top">
+                <div class="kpi-label">Top Endpoints</div>
+                <div id="kpi-topendpoints"><div class="empty-inline">No traffic yet</div></div>
+            </div>
         </div>
 
-        <div class="card">
-            <div class="card-title">Error Rate</div>
-            <div id="errorRate" class="card-value">0%</div>
+        <hr class="divider" />
+
+        <div class="section">
+            <div class="filter-groups">
+                <div class="filter-group">
+                    <div class="eyebrow">Status</div>
+                    <div class="pills">
+                        <button class="pill active" data-filter-status="all">All</button>
+                        <button class="failure-pill" data-filter-status="failures">Failures</button>
+                        <button class="slow-pill" data-filter-status="slow">Slow</button>
+                        <button class="pill" data-filter-status="2xx">2xx</button>
+                        <button class="content-pill" data-filter-status="4xx">4xx</button>
+                        <button class="failure-pill" data-filter-status="5xx">5xx</button>
+                    </div>
+                </div>
+                <div class="filter-group">
+                    <div class="eyebrow">Method</div>
+                    <div class="pills">
+                        <button class="pill active" data-filter-method="all">All Methods</button>
+                        <button class="get-pill" data-filter-method="GET">GET</button>
+                        <button class="pill" data-filter-method="POST">POST</button>
+                        <button class="slow-pill" data-filter-method="PUT">PUT</button>
+                        <button class="patch-pill" data-filter-method="PATCH">PATCH</button>
+                        <button class="failure-pill" data-filter-method="DELETE">DELETE</button>
+                    </div>
+                </div>
+                <div class="filter-group search-group">
+                    <div class="eyebrow">Path</div>
+                    <input id="search-path" type="text" placeholder="Search path…" />
+                </div>
+            </div>
         </div>
 
-        <div class="card">
-            <div class="card-title">Slow Requests</div>
-            <div id="slowRequests" class="card-value">0</div>
+        <div class="section">
+            <div class="toolbar">
+                <div class="toolbar-group">
+                    <div class="eyebrow">Live</div>
+                    <div class="btns">
+                        <button id="pause-live-btn" class="btn btn-ghost btn-live"><span class="dot-mini"></span>Pause Captures</button>
+                    </div>
+                </div>
+                <div class="toolbar-group">
+                    <div class="eyebrow">Data</div>
+                    <div class="btns">
+                        <button id="export-json-btn" class="btn btn-ghost">Export JSON</button>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <div class="card">
-            <div class="card-title">Requests / Min</div>
-            <div id="requestsPerMinute" class="card-value">0</div>
+        <div class="visible-results-bar">
+            <div class="kpi-label" style="margin:0;">Visible Results</div>
+            <div class="kpi-value" id="visible-results-count">0</div>
         </div>
 
-        <div class="card">
-            <div class="card-title">Top Endpoints</div>
-            <div id="topEndpoints"></div>
+        <div class="section-flat">
+            <div class="chart-header">
+                <div>
+                    <h2>Requests Per Minute Timeline</h2>
+                    <div class="chart-sub">Last 15 minutes · stacked by outcome</div>
+                </div>
+                <div class="chart-legend">
+                    <span class="legend-item"><span class="legend-swatch success"></span>Success</span>
+                    <span class="legend-item"><span class="legend-swatch redirect"></span>Redirect</span>
+                    <span class="legend-item"><span class="legend-swatch error"></span>Errors</span>
+                </div>
+            </div>
+            <div class="chart-wrap" id="chart-wrap"></div>
         </div>
 
+        <hr class="divider" />
+
+        <div class="section-flat">
+            <div class="table-header">
+                <h2>Captured Requests</h2>
+                <div class="pagination">
+                    <button id="prev-page-btn" class="btn btn-ghost">Previous</button>
+                    <span id="page-info">Page 1 of 1</span>
+                    <button id="next-page-btn" class="btn btn-ghost">Next</button>
+                </div>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Method</th>
+                        <th>Endpoint</th>
+                        <th>Status</th>
+                        <th>Duration</th>
+                        <th>Confidence</th>
+                    </tr>
+                </thead>
+                <tbody id="capture-tbody"></tbody>
+            </table>
+        </div>
+
+        <hr class="divider" />
+
+        <div class="section-flat">
+            <div class="table-header"><h2>Capture Details</h2></div>
+            <div class="section" id="capture-details-panel">
+                <div class="details-placeholder">Select a request to see full details…</div>
+            </div>
+        </div>
+
+        <hr class="divider" />
+
+        <div class="section-flat">
+            <div class="danger-zone">
+                <div class="eyebrow">Danger Zone</div>
+                <div class="btns">
+                    <button id="clear-captures-btn" class="btn btn-danger">Clear Stored Captures</button>
+                </div>
+            </div>
+        </div>
 
     </div>
 
-    <div class="toolbar">
-        <button data-filter="all" onclick="setFilter('all')">All</button>
-        <button data-filter="failed" onclick="setFilter('failed')">Failures</button>
-        <button data-filter="slow" onclick="setFilter('slow')">Slow</button>
-        <button data-filter="success" onclick="setFilter('success')">2xx</button>
-        <button data-filter="clientError" onclick="setFilter('clientError')">4xx</button>
-        <button data-filter="serverError" onclick="setFilter('serverError')">5xx</button>
-
-        <div class="divider"></div>
-
-        <button data-method="all" onclick="setMethodFilter('all')">All Methods</button>
-        <button data-method="GET" onclick="setMethodFilter('GET')">GET</button>
-        <button data-method="POST" onclick="setMethodFilter('POST')">POST</button>
-        <button data-method="PUT" onclick="setMethodFilter('PUT')">PUT</button>
-        <button data-method="PATCH" onclick="setMethodFilter('PATCH')">PATCH</button>
-        <button data-method="DELETE" onclick="setMethodFilter('DELETE')">DELETE</button>
-    </div>
-    <div class="action-bar">
-        <button onclick="pauseLiveFeed()">Pause Live</button>
-        <button onclick="resumeLiveFeed()">Resume Live</button>
-        <button onclick="exportCaptures()">Export JSON</button>
-        <button onclick="clearDashboard()">Clear Dashboard</button>
-        <button onclick="clearBackendCaptures()">Clear Stored Captures</button>
-
-        <input id="pathSearch"
-               placeholder="Search path..."
-               oninput="applyFilters()" />
-    </div>
-
-    <div class="card">
-        <div class="card-title">Visible Results</div>
-        <div id="visibleResults" class="card-value">0</div>
-    </div>
-    <br />
-
-    <h2>Requests Per Minute Timeline</h2>
-    <canvas id="rpmChart" width="900" height="220"></canvas>
-
-    <div class="feed" id="feed"></div>
-    <h2>Capture Details</h2>
-
-    <div id="captureDetails" class="feed" style="padding:16px;">
-        Select a request...
-    </div>
+    <div class="toast-container" id="toast-container"></div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
-
     <script>
-        const feed = document.getElementById("feed");
-        let requestTimestamps = [];
-        let livePaused = false;
-        let activeMethodFilter = "all";
-        let rpmHistory = [];
+        (function () {
+            'use strict';
 
-        let activeFilter = 'all';
-        function setFilter(filter) {
-            activeFilter = filter;
+            var BUCKET_MS = 60000;
+            var WINDOW_MIN = 15;
+            var MAX_CHART_CAPTURES = 500;
 
-            document.querySelectorAll("[data-filter]").forEach(button => {
-                button.classList.toggle(
-                    "active",
-                    button.dataset.filter === filter
-                );
-            });
+            var state = {
+                page: 1,
+                pageSize: 8,
+                totalPages: 1,
+                totalCount: 0,
+                captures: [],
+                chartCaptures: [],
+                selectedId: null,
+                stats: null,
+                filters: { status: 'all', method: 'all', search: '' },
+                livePaused: false,
+                recentTimestamps: [],
+                site: '',
+                observation: {
+                    isConnected: false,
+                    tabId: '',
+                    sessionId: '',
+                    siteUrl: '',
+                    trackedUrl: ''
+                }
+            };
 
-            applyFilters();
-        }
+            var el = {};
+            var connection = null;
+            var observedTabWindow = null;
+            var observedTabMonitor = null;
 
-        function updateRpmChart() {
-            const canvas = document.getElementById("rpmChart");
-            const ctx = canvas.getContext("2d");
-
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            const padding = 30;
-            const width = canvas.width - padding * 2;
-            const height = canvas.height - padding * 2;
-
-            ctx.strokeStyle = "#334155";
-            ctx.lineWidth = 1;
-
-            ctx.beginPath();
-            ctx.moveTo(padding, padding);
-            ctx.lineTo(padding, canvas.height - padding);
-            ctx.lineTo(canvas.width - padding, canvas.height - padding);
-            ctx.stroke();
-
-            if (rpmHistory.length === 0) return;
-
-            const maxValue = Math.max(...rpmHistory.map(x => x.value), 1);
-
-            ctx.strokeStyle = "#38bdf8";
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-
-            rpmHistory.forEach((point, index) => {
-                const x = padding + (index / Math.max(rpmHistory.length - 1, 1)) * width;
-                const y = canvas.height - padding - (point.value / maxValue) * height;
-
-                if (index === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
-            });
-
-            ctx.stroke();
-
-            ctx.fillStyle = "#e5e7eb";
-            ctx.font = "12px Arial";
-            ctx.fillText(`Max RPM: ${maxValue}`, padding, 18);
-        }
-        function pauseLiveFeed() {
-            livePaused = true;
-            document.getElementById("connectionStatus").textContent =
-                "Connected — live feed paused";
-        }
-
-        function resumeLiveFeed() {
-            livePaused = false;
-            document.getElementById("connectionStatus").textContent =
-                "Connected to live stream.";
-        }
-
-        function applyFilters() {
-            const searchText =
-                document.getElementById("pathSearch").value.toLowerCase();
-
-            Array.from(feed.children).forEach(row => {
-                const statusCode = Number(row.dataset.statusCode);
-                const duration = Number(row.dataset.duration);
-                const path = (row.dataset.path || "").toLowerCase();
-                const method = row.dataset.method || "";
-
-                const matchesFilter =
-                    activeFilter === "all" ||
-                    (activeFilter === "failed" && statusCode >= 400) ||
-                    (activeFilter === "slow" && duration >= 1000) ||
-                    (activeFilter === "success" && statusCode >= 200 && statusCode < 300) ||
-                    (activeFilter === "clientError" && statusCode >= 400 && statusCode < 500) ||
-                    (activeFilter === "serverError" && statusCode >= 500);
-
-                const matchesMethod =
-                    activeMethodFilter === "all" ||
-                    method === activeMethodFilter;
-
-                const matchesSearch =
-                    !searchText || path.includes(searchText);
-
-                row.style.display =
-                    matchesFilter && matchesMethod && matchesSearch
-                        ? "grid"
-                        : "none";
-            });
-
-            const visibleRows =
-                Array.from(feed.children)
-                    .filter(row => row.style.display !== "none");
-
-            document.getElementById("visibleResults").textContent =
-                visibleRows.length;
-
-        }
-
-        function setMethodFilter(method) {
-            activeMethodFilter = method;
-
-            document.querySelectorAll("[data-method]").forEach(button => {
-                button.classList.toggle(
-                    "method-active",
-                    button.dataset.method === method
-                );
-            });
-
-            applyFilters();
-        }
-
-        function addCaptureToDashboard(capture) {
-            const time = new Date(capture.timestampUtc).toLocaleTimeString();
-            requestTimestamps.push(Date.now());
-
-            const oneMinuteAgo = Date.now() - 60000;
-
-            requestTimestamps = requestTimestamps.filter(timestamp =>
-                timestamp > oneMinuteAgo
-            );
-
-            document.getElementById("requestsPerMinute").textContent =
-                requestTimestamps.length;
-
-            const row = document.createElement("div");
-            row.className = "row";
-            row.dataset.statusCode = capture.statusCode;
-            row.dataset.duration = capture.durationMs;
-            row.dataset.path = capture.path;
-            row.captureData = capture;
-            row.dataset.method = capture.method;
-
-            row.addEventListener("click", () => {
-                showCaptureDetails(capture);
-            });
-
-            const isFailed = capture.statusCode >= 400 || capture.exception;
-            const isSlow = capture.durationMs >= 1000;
-
-            row.innerHTML = `
-                                                                <div class="method">${capture.method}</div>
-                                                                <div>${capture.path}</div>
-                                                                <div>
-                                                                    <span class="badge ${isFailed ? "fail" : "ok"}">
-                                                                        ${capture.statusCode}
-                                                                    </span>
-                                                                </div>
-                                                                <div class="${isSlow ? "slow" : "muted"}">
-                                                                    ${capture.durationMs}ms
-                                                                </div>
-                                                                <div class="muted">${time}</div>
-`;
-
-            feed.prepend(row);
-            applyFilters();
-
-            if (feed.children.length > 50) {
-                feed.removeChild(feed.lastChild);
+            function statusClass(s) { return Math.floor(s / 100) + 'xx'; }
+            function fmtTime(ts) {
+                var d = new Date(ts);
+                return d.toLocaleTimeString(undefined, { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
             }
-        }
-
-        function showCaptureDetails(capture) {
-
-            const panel =
-                document.getElementById("captureDetails");
-
-            const statusClass =
-                capture.statusCode >= 400
-                    ? "fail"
-                    : "ok";
-
-            const requestBody =
-                formatJson(capture.requestBody);
-
-            const responseBody =
-                formatJson(capture.responseBody);
-
-            const exceptionSection =
-                capture.exception
-                    ? `
-                                    <h4>Exception</h4>
-                                    <pre>${capture.exception}</pre>
-                                  `
-                    : "";
-
-            panel.innerHTML = `
-                                <h3>${capture.method} ${capture.path}</h3>
-
-                                <p>
-                                    <strong>Status:</strong>
-                                    <span class="badge ${statusClass}">
-                                        ${capture.statusCode}
-                                    </span>
-                                </p>
-
-                                <p><strong>Duration:</strong> ${capture.durationMs}ms</p>
-
-                                <p>
-                                    <strong>Timestamp:</strong>
-                                    ${new Date(capture.timestampUtc).toLocaleString()}
-                                </p>
-
-                                <p><strong>Correlation:</strong> ${capture.correlationId}</p>
-                                <button onclick="navigator.clipboard.writeText('${capture.correlationId}')">
-                                 Copy Correlation ID
-                                </button>
-
-                                <p>${exceptionSection}</p>
-
-                                <h4>Headers</h4>
-                                <pre>${JSON.stringify(capture.headers, null, 2)}</pre>
-
-                                <h4>Request Body</h4>
-                                <pre>${requestBody}</pre>
-
-                                <h4>Response Body</h4>
-                                <pre>${responseBody}</pre>
-                            `;
-        }
-
-        function clearDashboard() {
-            feed.innerHTML = "";
-
-            document.getElementById("captureDetails").innerHTML =
-                "Select a request...";
-
-            requestTimestamps = [];
-
-            document.getElementById("requestsPerMinute").textContent = "0";
-        }
-
-        async function clearBackendCaptures() {
-            const confirmed =
-                confirm("This will clear stored in-memory captures. Continue?");
-
-            if (!confirmed) return;
-
-            const response = await fetch("/footlook/captures", {
-                method: "DELETE"
-            });
-
-            if (!response.ok) {
-                alert("Failed to clear captures");
-                return;
+            function fmtClock(ts) {
+                var d = new Date(ts);
+                return d.toLocaleTimeString(undefined, { hour12: false, hour: '2-digit', minute: '2-digit' });
             }
-
-            clearDashboard();
-            await loadStats();
-        }
-
-        function formatJson(value) {
-            if (!value)
-                return "No body";
-
-            try {
-                return JSON.stringify(
-                    JSON.parse(value),
-                    null,
-                    2
-                );
-            }
-            catch
-            {
-                return value;
-            }
-        }
-
-        async function loadHistory() {
-            const response = await fetch("/footlook/captures/history?count=50");
-
-            if (!response.ok) {
-                console.error("Failed to load history:", response.status);
-                return;
-            }
-
-            const captures = await response.json();
-            captures.reverse().forEach(addCaptureToDashboard);
-        }
-
-        async function loadStats() {
-            const response = await fetch("/footlook/captures/stats");
-
-            if (!response.ok) {
-                console.error("Failed to load stats:", response.status);
-                return;
-            }
-
-            const stats = await response.json();
-
-            document.getElementById("totalRequests").textContent = stats.totalRequests;
-            document.getElementById("failedRequests").textContent = stats.failedRequests;
-            document.getElementById("avgDuration").textContent =
-                Math.round(stats.averageDurationMs) + "ms";
-
-            const errorRate = stats.totalRequests > 0
-                ? Math.round((stats.failedRequests / stats.totalRequests) * 100)
-                : 0;
-
-            document.getElementById("errorRate").textContent = errorRate + "%";
-            document.getElementById("slowRequests").textContent = stats.slowRequests ?? 0;
-
-            const topEndpoints = document.getElementById("topEndpoints");
-            topEndpoints.innerHTML = "";
-
-            if (stats.topEndpoints) {
-                stats.topEndpoints.forEach(endpoint => {
-
-                    const item = document.createElement("div");
-
-                    item.className = "endpoint-item";
-
-                    item.innerHTML = `
-                <strong>${endpoint.path}</strong><br>
-                Hits: ${endpoint.count}<br>
-                Avg: ${Math.round(endpoint.averageDuration)}ms<br>
-                Failures: ${endpoint.failures}
-            `;
-
-                    item.style.cursor = "pointer";
-
-                    item.addEventListener("click", () => {
-                        document.getElementById("pathSearch").value =
-                            endpoint.path;
-
-                        applyFilters();
-                    });
-
-                    topEndpoints.appendChild(item);
+            function escapeHtml(s) {
+                return String(s ?? '').replace(/[&<>"']/g, function (c) {
+                    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
                 });
             }
-        }
 
-        const connection = new signalR.HubConnectionBuilder()
-            .withUrl("/footlook/live")
-            .withAutomaticReconnect()
-            .build();
+            function normalizeCapture(c) {
+                var envelope = c || {};
+                var payload = envelope.capture ?? envelope.Capture ?? envelope;
+                var timestampUtc = payload.timestampUtc ?? payload.TimestampUtc ?? payload.timestamp ?? payload.Timestamp;
+                var ts = Date.parse(timestampUtc);
+                var rawIdentitySignals = envelope.identitySignals ?? envelope.IdentitySignals ?? envelope.signals ?? envelope.Signals ?? [];
 
-        connection.on("captureReceived", async capture => {
-            if (!livePaused) {
-                addCaptureToDashboard(capture);
+                return {
+                    id: payload.id ?? payload.Id ?? (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : ('id-' + Math.random().toString(36).slice(2))),
+                    method: payload.method ?? payload.Method ?? 'GET',
+                    path: payload.path ?? payload.Path ?? '/',
+                    status: Number(payload.statusCode ?? payload.StatusCode ?? 0),
+                    duration: Number(payload.durationMs ?? payload.DurationMs ?? 0),
+                    timestampUtc: timestampUtc,
+                    timestamp: Number.isNaN(ts) ? Date.now() : ts,
+                    exception: payload.exception ?? payload.Exception ?? null,
+                    correlationId: payload.correlationId ?? payload.CorrelationId ?? '',
+                    traceId: payload.traceId ?? payload.TraceId ?? '',
+                    spanId: payload.spanId ?? payload.SpanId ?? '',
+                    parentSpanId: payload.parentSpanId ?? payload.ParentSpanId ?? '',
+                    traceParent: payload.traceParent ?? payload.TraceParent ?? '',
+                    traceState: payload.traceState ?? payload.TraceState ?? '',
+                    baggage: payload.baggage ?? payload.Baggage ?? '',
+                    headers: payload.headers ?? payload.Headers ?? {},
+                    requestBody: payload.requestBody ?? payload.RequestBody ?? null,
+                    responseBody: payload.responseBody ?? payload.ResponseBody ?? null,
+                    identityConfidence: Number(envelope.identityConfidence ?? envelope.IdentityConfidence ?? envelope.confidence ?? envelope.Confidence ?? 0),
+                    identitySignals: Array.isArray(rawIdentitySignals)
+                        ? rawIdentitySignals.map(function (x) { return String(x || '').trim(); }).filter(Boolean)
+                        : [],
+                    ok: Number(payload.statusCode ?? payload.StatusCode ?? 0) < 400,
+                    slow: Number(payload.durationMs ?? payload.DurationMs ?? 0) >= 1000
+                };
             }
 
-            await loadStats();
-        });
+            function getConfidenceLevel(confidence) {
+                var value = Number(confidence || 0);
+                if (value >= 0.8) return 'high';
+                if (value >= 0.6) return 'medium';
+                return 'low';
+            }
 
-        connection.onclose(() => {
-            document.getElementById("connectionStatus").textContent =
-                "Disconnected from live stream.";
-        });
+            function formatConfidence(confidence) {
+                var value = Number(confidence || 0);
+                if (!Number.isFinite(value) || value <= 0) return '-';
+                return Math.round(value * 100) + '%';
+            }
 
-        connection.onreconnecting(() => {
-            document.getElementById("connectionStatus").textContent =
-                "Reconnecting...";
-        });
+            function summarizeConfidence(captures) {
+                var rows = Array.isArray(captures) ? captures : [];
+                var withConfidence = rows.filter(function (x) {
+                    return Number.isFinite(Number(x.identityConfidence)) && Number(x.identityConfidence) > 0;
+                });
 
-        connection.onreconnected(() => {
-            document.getElementById("connectionStatus").textContent =
-                "Connected to live stream.";
-        });
+                if (withConfidence.length === 0) {
+                    return {
+                        hasData: false,
+                        average: 0,
+                        level: 'low',
+                        label: 'N/A',
+                        scoreText: '-'
+                    };
+                }
 
-        function exportCaptures() {
+                var average = withConfidence.reduce(function (sum, x) {
+                    return sum + Number(x.identityConfidence || 0);
+                }, 0) / withConfidence.length;
 
-            const captures =
-                Array.from(feed.children)
-                    .map(row => row.captureData);
+                var level = getConfidenceLevel(average);
+                var label = level === 'high' ? 'HIGH' : (level === 'medium' ? 'MEDIUM' : 'LOW');
 
-            const blob =
-                new Blob(
-                    [JSON.stringify(captures, null, 2)],
-                    { type: "application/json" });
+                return {
+                    hasData: true,
+                    average: average,
+                    level: level,
+                    label: label,
+                    scoreText: formatConfidence(average)
+                };
+            }
 
-            const url =
-                URL.createObjectURL(blob);
+            function cacheEls() {
+                [
+                    'live-dot', 'live-status-text', 'site-url-input', 'connect-btn', 'site-label',
+                    'kpi-total', 'kpi-failed', 'kpi-failed-card', 'kpi-failed-tag', 'spark-failed',
+                    'kpi-avgdur', 'kpi-avgdur-card', 'kpi-errorrate', 'kpi-errorrate-card', 'kpi-errorrate-tag',
+                    'spark-errorrate', 'kpi-slow', 'kpi-slow-card', 'kpi-rpm', 'kpi-topendpoints',
+                    'kpi-confidence', 'kpi-confidence-tag', 'kpi-confidence-card',
+                    'visible-results-count', 'chart-wrap', 'capture-tbody', 'page-info', 'prev-page-btn',
+                    'next-page-btn', 'capture-details-panel', 'pause-live-btn', 'toast-container', 'search-path'
+                ].forEach(function (id) { el[id] = document.getElementById(id); });
+            }
 
-            const link =
-                document.createElement("a");
+            function toast(msg) {
+                var t = document.createElement('div');
+                t.className = 'toast';
+                t.textContent = msg;
+                el['toast-container'].appendChild(t);
+                requestAnimationFrame(function () { t.classList.add('show'); });
+                setTimeout(function () {
+                    t.classList.remove('show');
+                    setTimeout(function () { t.remove(); }, 250);
+                }, 2200);
+            }
 
-            link.href = url;
+            function confirmDangerAction(targetName, requiredText) {
+                var instruction = 'You have clicked to delete "' + targetName + '". Type this to confirm: ' + requiredText;
+                var typed = window.prompt(instruction, '');
+                if (typed == null) return false;
+                return typed.trim().toLowerCase() === requiredText.toLowerCase();
+            }
 
-            link.download =
-                "footlook-captures.json";
+            function normalizeSiteUrl(value) {
+                var raw = String(value || '').trim();
+                if (!raw) return null;
 
-            link.click();
+                if (!/^https?:\/\//i.test(raw)) {
+                    raw = 'https://' + raw;
+                }
 
-            URL.revokeObjectURL(url);
-        }
+                try {
+                    return new URL(raw).toString();
+                } catch {
+                    return null;
+                }
+            }
 
-        async function startDashboard() {
-            try {
-                await connection.start();
+            function createObservationId(prefix) {
+                var token = (typeof crypto !== 'undefined' && crypto.randomUUID)
+                    ? crypto.randomUUID().replace(/-/g, '').slice(0, 8)
+                    : Math.random().toString(36).slice(2, 10);
 
-                document.getElementById("connectionStatus").textContent =
-                    "Connected to live stream.";
+                return prefix + '-' + token;
+            }
 
-                console.log("Connected to FootLook live stream");
+            function buildTrackedSiteUrl(siteUrl, tabId, sessionId) {
+                var url = new URL(siteUrl);
+                url.searchParams.set('footlookTabId', tabId);
+                url.searchParams.set('footlookSessionId', sessionId);
+                return url.toString();
+            }
 
-                await loadHistory();
+            function getHeaderValue(headers, headerName) {
+                if (!headers || !headerName) return '';
+
+                var target = String(headerName).toLowerCase();
+                var keys = Object.keys(headers);
+
+                for (var i = 0; i < keys.length; i++) {
+                    if (String(keys[i]).toLowerCase() === target) {
+                        return String(headers[keys[i]] || '');
+                    }
+                }
+
+                return '';
+            }
+
+            function isCaptureInObservedSession(capture) {
+                if (!state.observation.isConnected) return true;
+
+                var tabId = String(state.observation.tabId || '').toLowerCase();
+                var sessionId = String(state.observation.sessionId || '').toLowerCase();
+                if (!tabId || !sessionId) return false;
+
+                var headers = capture.headers || {};
+                var sessionHeader = getHeaderValue(headers, 'x-footlook-session-id').toLowerCase();
+                var tabHeader = getHeaderValue(headers, 'x-footlook-tab-id').toLowerCase();
+                if (sessionHeader === sessionId && tabHeader === tabId) return true;
+
+                var referer = getHeaderValue(headers, 'referer') || getHeaderValue(headers, 'referrer');
+                if (!referer) return false;
+
+                try {
+                    var refererUrl = new URL(referer);
+                    var refererSessionId = String(refererUrl.searchParams.get('footlookSessionId') || '').toLowerCase();
+                    var refererTabId = String(refererUrl.searchParams.get('footlookTabId') || '').toLowerCase();
+                    return refererSessionId === sessionId && refererTabId === tabId;
+                } catch {
+                    var lowReferer = referer.toLowerCase();
+                    return lowReferer.includes(sessionId) && lowReferer.includes(tabId);
+                }
+            }
+
+            function applyObservationFilter(captures) {
+                if (!Array.isArray(captures) || !state.observation.isConnected) return captures;
+                return captures.filter(isCaptureInObservedSession);
+            }
+
+            function stopObservedTabMonitoring() {
+                if (observedTabMonitor) {
+                    clearInterval(observedTabMonitor);
+                    observedTabMonitor = null;
+                }
+            }
+
+            function notifyOutcomeSessionStart(sessionId, tabId, siteUrl) {
+                if (!sessionId || !tabId) return;
+
+                var params = new URLSearchParams();
+                params.set('sessionId', String(sessionId));
+                params.set('tabId', String(tabId));
+                if (siteUrl) params.set('siteUrl', String(siteUrl));
+
+                fetch('/footlook/outcomes/session/start?' + params.toString(), {
+                    method: 'POST'
+                }).catch(function () { });
+            }
+
+            function notifyOutcomeSessionEnd(sessionId) {
+                if (!sessionId) return;
+
+                var params = new URLSearchParams();
+                params.set('sessionId', String(sessionId));
+
+                fetch('/footlook/outcomes/session/end?' + params.toString(), {
+                    method: 'POST'
+                }).catch(function () { });
+            }
+
+            function disconnectObservedSite(options) {
+                var shouldCloseTab = !!(options && options.closeTab);
+                var previousSessionId = state.observation && state.observation.sessionId
+                    ? String(state.observation.sessionId)
+                    : '';
+
+                if (shouldCloseTab && observedTabWindow && !observedTabWindow.closed) {
+                    try { observedTabWindow.close(); } catch { }
+                }
+
+                stopObservedTabMonitoring();
+                observedTabWindow = null;
+                state.site = '';
+                state.observation = {
+                    isConnected: false,
+                    tabId: '',
+                    sessionId: '',
+                    siteUrl: '',
+                    trackedUrl: ''
+                };
+
+                setConnectButtonState('default');
+
+                if (el['site-url-input']) {
+                    el['site-url-input'].value = '';
+                }
+
+                notifyOutcomeSessionEnd(previousSessionId);
+            }
+
+            function startObservedTabMonitoring() {
+                stopObservedTabMonitoring();
+
+                observedTabMonitor = setInterval(function () {
+                    if (!state.observation.isConnected) return;
+
+                    if (observedTabWindow && !observedTabWindow.closed) return;
+
+                    disconnectObservedSite({ closeTab: false });
+                    toast('Observed tab closed. FootLook disconnected.');
+                    refreshAll(1).catch(console.error);
+                }, 1200);
+            }
+
+            function shouldShowSiteConnector() {
+                var host = String(window.location.hostname || '').toLowerCase();
+                return host === 'footlook.co.za' || host.endsWith('.footlook.co.za');
+            }
+
+            function applySiteConnectorVisibility() {
+                var connectBar = document.querySelector('.connect-bar');
+                if (!connectBar) return;
+
+                connectBar.hidden = !shouldShowSiteConnector();
+            }
+
+            function setConnectButtonState(stateName) {
+                var btn = el['connect-btn'];
+                if (!btn) return;
+
+                if (stateName === 'checking') {
+                    btn.textContent = 'Checking...';
+                    btn.disabled = true;
+                    return;
+                }
+
+                btn.disabled = false;
+                btn.textContent = stateName === 'connected' ? 'Disconnect' : 'Connect to site';
+            }
+
+            function tagText(sev) { return sev === 'crit' ? 'CRITICAL' : sev === 'warn' ? 'ELEVATED' : 'HEALTHY'; }
+
+            function setSeverity(cardEl, sev) {
+                cardEl.classList.remove('sev-ok', 'sev-warn', 'sev-crit');
+                cardEl.classList.add('sev-' + sev);
+            }
+
+            function sevFor(value, warnAt, critAt) {
+                if (value >= critAt) return 'crit';
+                if (value >= warnAt) return 'warn';
+                return 'ok';
+            }
+
+            function getFilteredCaptures() {
+                var rows = state.captures.slice();
+
+                if (state.filters.method && state.filters.method !== 'all') {
+                    rows = rows.filter(function (r) {
+                        return String(r.method || '').toUpperCase() === state.filters.method;
+                    });
+                }
+
+                if (state.filters.search) {
+                    rows = rows.filter(function (r) {
+                        return String(r.path || '').toLowerCase().includes(state.filters.search);
+                    });
+                }
+
+                if (state.filters.status === 'failures') {
+                    rows = rows.filter(function (r) { return !r.ok || !!r.exception; });
+                }
+
+                if (state.filters.status === 'slow') {
+                    rows = rows.filter(function (r) { return Number(r.duration || 0) >= 1000; });
+                }
+
+                if (state.filters.status === '2xx') {
+                    rows = rows.filter(function (r) { return Number(r.status || 0) >= 200 && Number(r.status || 0) <= 299; });
+                }
+
+                if (state.filters.status === '4xx') {
+                    rows = rows.filter(function (r) { return Number(r.status || 0) >= 400 && Number(r.status || 0) <= 499; });
+                }
+
+                if (state.filters.status === '5xx') {
+                    rows = rows.filter(function (r) { return Number(r.status || 0) >= 500 && Number(r.status || 0) <= 599; });
+                }
+
+                return rows;
+            }
+
+            function buildCapturesUrl(page) {
+                var params = new URLSearchParams();
+                params.set('page', String(page));
+                params.set('pageSize', String(state.pageSize));
+
+                if (state.observation.isConnected) {
+                    params.set('footlookSessionId', state.observation.sessionId);
+                    params.set('footlookTabId', state.observation.tabId);
+                    params.set('minConfidence', '0.55');
+
+                    try {
+                        var observedHost = new URL(state.observation.siteUrl).hostname;
+                        if (observedHost) {
+                            params.set('siteHost', observedHost);
+                        }
+                    } catch { }
+                }
+
+                return '/footlook/captures/recent?' + params.toString();
+            }
+
+            function buildLegacyCapturesUrl(page) {
+                var params = new URLSearchParams();
+                params.set('page', String(page));
+                params.set('pageSize', String(state.pageSize));
+
+                if (state.observation.isConnected) {
+                    params.set('footlookSessionId', state.observation.sessionId);
+                    params.set('footlookTabId', state.observation.tabId);
+                    params.set('minConfidence', '0.55');
+
+                    try {
+                        var observedHost = new URL(state.observation.siteUrl).hostname;
+                        if (observedHost) {
+                            params.set('siteHost', observedHost);
+                        }
+                    } catch { }
+                }
+
+                return '/footlook/captures?' + params.toString();
+            }
+
+            function detailField(label, value) {
+                return '<div class="detail-field"><span class="detail-label">' + label + '</span><span class="detail-value mono">' + escapeHtml(String(value)) + '</span></div>';
+            }
+
+            function renderDetails() {
+                var panel = el['capture-details-panel'];
+                if (!state.selectedId) {
+                    panel.innerHTML = '<div class="details-placeholder">Select a request to see full details&hellip;</div>';
+                    return;
+                }
+
+                var row = state.captures.find(function (x) { return x.id === state.selectedId; });
+                if (!row) {
+                    panel.innerHTML = '<div class="details-placeholder">Select a request to see full details&hellip;</div>';
+                    return;
+                }
+
+                var cls = statusClass(row.status);
+                const prettyContent = (value) => {
+                    if (value == null) return value;
+
+                    const text = typeof value === "string" ? value : String(value);
+
+                    try {
+                        return JSON.stringify(JSON.parse(text), null, 2);
+                    } catch {
+                        return text;
+                    }
+                };
+                const normalizeBody = (body) => {
+                    if (body == null || body === "") return [];
+
+                    if (Array.isArray(body)) {
+                        return body.map(function (item) {
+                            if (typeof item === "string") return { content: prettyContent(item) };
+                            if (item && typeof item === "object" && "content" in item) {
+                                return Object.assign({}, item, { content: prettyContent(item.content) });
+                            }
+                            return { content: prettyContent(item) };
+                        });
+                    }
+
+                    return [{ content: prettyContent(body) }];
+                };
+
+                var jsonBlock = JSON.stringify({
+                    requestId: row.id ?? row.requestId ?? row.RequestId ?? null,
+                    timestampUtc: new Date(row.timestampUtc ?? row.TimestampUtc ?? row.timestamp ?? Date.now()).toISOString(),
+                    method: row.method ?? row.Method ?? null,
+                    path: row.path ?? row.Path ?? null,
+                    statusCode: row.statusCode ?? row.StatusCode ?? row.status ?? null,
+                    correlationId: row.correlationId ?? row.CorrelationId ?? null,
+                    traceId: row.traceId ?? row.TraceId ?? null,
+                    spanId: row.spanId ?? row.SpanId ?? null,
+                    parentSpanId: row.parentSpanId ?? row.ParentSpanId ?? null,
+                    traceParent: row.traceParent ?? row.TraceParent ?? null,
+                    traceState: row.traceState ?? row.TraceState ?? null,
+                    baggage: row.baggage ?? row.Baggage ?? null,
+                    identityConfidence: row.identityConfidence ?? null,
+                    identitySignals: row.identitySignals ?? [],
+                    environmentName: row.environmentName ?? row.EnvironmentName ?? "Development",
+
+                    request: {
+                        // contentType: row.requestContentType ?? row.RequestContentType ?? row.request?.contentType ?? row.request?.ContentType ?? null,
+                        // sizeBytes: row.requestSizeBytes ?? row.RequestSizeBytes ?? row.request?.sizeBytes ?? row.request?.SizeBytes ?? 0,
+                        bodyCaptured: row.request?.bodyCaptured ?? row.request?.BodyCaptured ?? row.requestBodyCaptured ?? row.RequestBodyCaptured ?? !!(row.requestBody ?? row.RequestBody),
+                        requestBody: normalizeBody(
+                            row.requestBody
+                            ?? row.RequestBody
+                            ?? row.request?.requestBody
+                            ?? row.request?.RequestBody
+                        )
+                    },
+
+                    response: {
+                        // contentType: row.responseContentType ?? row.ResponseContentType ?? row.response?.contentType ?? row.response?.ContentType ?? null,
+                        // sizeBytes: row.responseSizeBytes ?? row.ResponseSizeBytes ?? row.response?.sizeBytes ?? row.response?.SizeBytes ?? 0,
+                        bodyCaptured: row.response?.bodyCaptured ?? row.response?.BodyCaptured ?? row.responseBodyCaptured ?? row.ResponseBodyCaptured ?? !!(row.responseBody ?? row.ResponseBody),
+                        responseBody: normalizeBody(
+                            row.responseBody
+                            ?? row.ResponseBody
+                            ?? row.response?.responseBody
+                            ?? row.response?.ResponseBody
+                        )
+                    },
+
+                    error: row.error ?? row.Error ?? row.exception ?? row.Exception ?? null
+                }, null, 2);
+
+                panel.innerHTML =
+                    '<div class="details-head">'
+                    + '<span class="status-badge status-' + cls + ' lg">' + row.status + '</span>'
+                    + '<span class="details-title mono">' + escapeHtml(row.method + ' ' + row.path) + '</span>'
+                    + '</div>'
+                    + '<div class="details-grid">'
+                    + detailField('Duration', row.duration + 'ms')
+                    + detailField('Timestamp', new Date(row.timestamp).toLocaleString())
+                    + detailField('Correlation', row.correlationId || '-')
+                    + detailField('Trace ID', row.traceId || '-')
+                    + detailField('Span ID', row.spanId || '-')
+                    + detailField('Identity Confidence', formatConfidence(row.identityConfidence))
+                    + detailField('Identity Signals', (row.identitySignals && row.identitySignals.length) ? row.identitySignals.join(' • ') : '-')
+                    + detailField('Outcome', row.ok ? 'Success' : (row.status >= 500 ? 'Server error' : 'Client error'))
+                    + '</div>'
+                    + '<div class="details-json mono">' + escapeHtml(jsonBlock) + '</div>';
+            }
+
+            function renderTable() {
+                var rows = getFilteredCaptures();
+                el['visible-results-count'].textContent = rows.length.toLocaleString();
+
+                if (rows.length === 0) {
+                    el['capture-tbody'].innerHTML = '<tr class="empty-row"><td colspan="6">No requests match the current filters.</td></tr>';
+                } else {
+                    el['capture-tbody'].innerHTML = rows.map(function (r) {
+                        var cls = statusClass(r.status);
+                        var selected = r.id === state.selectedId ? ' selected' : '';
+                        var confidenceLevel = getConfidenceLevel(r.identityConfidence);
+                        var confidenceText = formatConfidence(r.identityConfidence);
+                        var confidenceClass = confidenceText === '-' ? '' : (' ' + confidenceLevel);
+                        var confidenceSignals = Array.isArray(r.identitySignals) && r.identitySignals.length > 0
+                            ? 'Signals: ' + r.identitySignals.join(', ')
+                            : 'No identity signals';
+
+                        return '<tr class="cap-row' + selected + '" data-id="' + r.id + '">'
+                            + '<td class="mono muted">' + fmtTime(r.timestamp) + '</td>'
+                            + '<td><span class="method-badge">' + escapeHtml(r.method) + '</span></td>'
+                            + '<td class="mono path-cell">' + escapeHtml(r.path) + '</td>'
+                            + '<td><span class="status-badge status-' + cls + '">' + r.status + '</span></td>'
+                            + '<td class="mono' + (r.slow ? ' dur-slow' : '') + '">' + r.duration + 'ms</td>'
+                            + '<td><span class="confidence-badge' + confidenceClass + '" title="' + escapeHtml(confidenceSignals) + '">' + confidenceText + '</span></td>'
+                            + '</tr>';
+                    }).join('');
+                }
+
+                el['page-info'].textContent = 'Page ' + state.page + ' of ' + state.totalPages;
+                el['prev-page-btn'].disabled = state.page <= 1;
+                el['next-page-btn'].disabled = state.page >= state.totalPages;
+
+                renderDetails();
+            }
+
+            function computeBuckets() {
+                var now = Date.now();
+                var startBucket = Math.floor((now - (WINDOW_MIN - 1) * BUCKET_MS) / BUCKET_MS);
+                var buckets = [];
+                for (var i = 0; i < WINDOW_MIN; i++) buckets.push({ start: (startBucket + i) * BUCKET_MS, total: 0, errors: 0, success: 0 });
+
+                state.chartCaptures.forEach(function (r) {
+                    var idx = Math.floor(r.timestamp / BUCKET_MS) - startBucket;
+                    if (idx >= 0 && idx < WINDOW_MIN) {
+                        buckets[idx].total++;
+                        if (r.ok) buckets[idx].success++;
+                        else buckets[idx].errors++;
+                    }
+                });
+
+                return buckets;
+            }
+
+            function drawSparkline(svg, values) {
+                if (!svg) return;
+                var w = 64;
+                var h = 22;
+                var max = Math.max.apply(null, [1].concat(values));
+                var step = w / ((values.length - 1) || 1);
+                var points = values.map(function (v, i) { return (i * step).toFixed(1) + ',' + (h - (v / max) * h).toFixed(1); }).join(' ');
+                svg.innerHTML = '<polyline class="spark-line" points="' + points + '" />';
+            }
+
+            function renderChart() {
+                var buckets = computeBuckets();
+                var wrap = el['chart-wrap'];
+                var totalAll = buckets.reduce(function (a, b) { return a + b.total; }, 0);
+
+                if (totalAll === 0) {
+                    wrap.innerHTML = '<div class="chart-empty"><span class="empty-dot"></span>Waiting for first request&hellip;</div>';
+                    return;
+                }
+
+                var maxVal = Math.max.apply(null, [4].concat(buckets.map(function (b) { return b.total; })));
+                var W = 900, H = 220, padL = 36, padR = 8, padT = 10, padB = 26;
+                var plotW = W - padL - padR, plotH = H - padT - padB;
+                var gap = 6;
+                var barW = (plotW / buckets.length) - gap;
+
+                var gridlines = '';
+                [0, 0.25, 0.5, 0.75, 1].forEach(function (t) {
+                    var y = padT + plotH * (1 - t);
+                    var val = Math.round(maxVal * t);
+                    gridlines += '<line x1="' + padL + '" x2="' + (W - padR) + '" y1="' + y + '" y2="' + y + '" class="grid-line" />';
+                    gridlines += '<text x="' + (padL - 8) + '" y="' + (y + 3) + '" class="axis-label" text-anchor="end">' + val + '</text>';
+                });
+
+                var bars = '';
+                var xlabels = '';
+
+                buckets.forEach(function (b, i) {
+                    var x = padL + i * (plotW / buckets.length) + gap / 2;
+                    var successH = (b.success / maxVal) * plotH;
+                    var errorH = (b.errors / maxVal) * plotH;
+                    var yBase = padT + plotH;
+                    var ySuccess = yBase - successH;
+                    var yError = ySuccess - errorH;
+                    var title = fmtClock(b.start) + ' · ' + b.total + ' req' + (b.errors ? ', ' + b.errors + ' errors' : '');
+
+                    if (b.success > 0) {
+                        bars += '<rect x="' + x + '" y="' + ySuccess + '" width="' + barW + '" height="' + successH + '" class="bar-success" rx="2"><title>' + title + '</title></rect>';
+                    }
+                    if (b.errors > 0) {
+                        bars += '<rect x="' + x + '" y="' + yError + '" width="' + barW + '" height="' + errorH + '" class="bar-error" rx="2"><title>' + title + '</title></rect>';
+                    }
+                    if (i % 3 === 0) {
+                        xlabels += '<text x="' + (x + barW / 2) + '" y="' + (H - 8) + '" class="axis-label" text-anchor="middle">' + fmtClock(b.start) + '</text>';
+                    }
+                });
+
+                wrap.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="chart-svg" preserveAspectRatio="none">' + gridlines + bars + xlabels + '</svg>';
+
+                drawSparkline(el['spark-failed'], buckets.map(function (b) { return b.errors; }));
+                drawSparkline(el['spark-errorrate'], buckets.map(function (b) { return b.total ? (b.errors / b.total) * 100 : 0; }));
+            }
+
+            function buildStatsFromCaptures(captures) {
+                var rows = Array.isArray(captures) ? captures : [];
+                var totalRequests = rows.length;
+                var failedRequests = rows.filter(function (x) { return !x.ok || !!x.exception; }).length;
+                var slowRequests = rows.filter(function (x) { return !!x.slow; }).length;
+                var averageDurationMs = totalRequests > 0
+                    ? rows.reduce(function (sum, x) { return sum + Number(x.duration || 0); }, 0) / totalRequests
+                    : 0;
+
+                var endpointMap = new Map();
+                rows.forEach(function (x) {
+                    var key = String(x.path || '/');
+                    var current = endpointMap.get(key) || { count: 0, totalDuration: 0, failures: 0 };
+                    current.count += 1;
+                    current.totalDuration += Number(x.duration || 0);
+                    if (!x.ok || !!x.exception) current.failures += 1;
+                    endpointMap.set(key, current);
+                });
+
+                var topEndpoints = Array.from(endpointMap.entries())
+                    .map(function (entry) {
+                        var data = entry[1];
+                        return {
+                            path: entry[0],
+                            count: data.count,
+                            averageDuration: data.count > 0 ? data.totalDuration / data.count : 0,
+                            failures: data.failures
+                        };
+                    })
+                    .sort(function (a, b) { return b.count - a.count; })
+                    .slice(0, 10);
+
+                return {
+                    totalRequests: totalRequests,
+                    failedRequests: failedRequests,
+                    slowRequests: slowRequests,
+                    averageDurationMs: averageDurationMs,
+                    topEndpoints: topEndpoints
+                };
+            }
+
+            function renderKPIs() {
+                var stats = state.stats || {};
+                var total = Number(stats.totalRequests ?? stats.TotalRequests ?? 0);
+                var failed = Number(stats.failedRequests ?? stats.FailedRequests ?? 0);
+                var slow = Number(stats.slowRequests ?? stats.SlowRequests ?? 0);
+                var avgDuration = Number(stats.averageDurationMs ?? stats.AverageDurationMs ?? 0);
+                var topEndpoints = stats.topEndpoints ?? stats.TopEndpoints ?? [];
+
+                var now = Date.now();
+                state.recentTimestamps = state.recentTimestamps.filter(function (x) { return now - x <= 60000; });
+                var rpm = state.recentTimestamps.length;
+
+                var errorRate = total > 0 ? (failed / total) * 100 : 0;
+                var erSev = sevFor(errorRate, 3, 8);
+                var durSev = sevFor(avgDuration, 200, 450);
+                var slowPct = total > 0 ? (slow / total) * 100 : 0;
+                var slowSev = sevFor(slowPct, 5, 15);
+
+                el['kpi-total'].textContent = total.toLocaleString();
+                el['kpi-failed'].textContent = failed.toLocaleString();
+                el['kpi-avgdur'].textContent = Math.round(avgDuration) + 'ms';
+                el['kpi-errorrate'].textContent = errorRate.toFixed(1) + '%';
+                el['kpi-slow'].textContent = slow.toLocaleString();
+                el['kpi-rpm'].textContent = rpm.toLocaleString();
+
+                setSeverity(el['kpi-failed-card'], erSev);
+                el['kpi-failed-tag'].textContent = tagText(erSev);
+                el['kpi-failed-tag'].className = 'sev-tag sev-' + erSev;
+
+                setSeverity(el['kpi-errorrate-card'], erSev);
+                el['kpi-errorrate-tag'].textContent = tagText(erSev);
+                el['kpi-errorrate-tag'].className = 'sev-tag sev-' + erSev;
+
+                setSeverity(el['kpi-avgdur-card'], durSev);
+                setSeverity(el['kpi-slow-card'], slowSev);
+
+                var confidenceSummary = summarizeConfidence(state.chartCaptures);
+                if (el['kpi-confidence']) {
+                    el['kpi-confidence'].textContent = confidenceSummary.scoreText;
+                }
+
+                if (el['kpi-confidence-tag']) {
+                    if (!confidenceSummary.hasData) {
+                        el['kpi-confidence-tag'].textContent = 'N/A';
+                        el['kpi-confidence-tag'].className = 'sev-tag sev-ok';
+                    } else {
+                        var confidenceTagClass = confidenceSummary.level === 'high'
+                            ? 'sev-ok'
+                            : (confidenceSummary.level === 'medium' ? 'sev-warn' : 'sev-crit');
+                        el['kpi-confidence-tag'].textContent = confidenceSummary.label;
+                        el['kpi-confidence-tag'].className = 'sev-tag ' + confidenceTagClass;
+                    }
+                }
+
+                if (el['kpi-confidence-card']) {
+                    if (!confidenceSummary.hasData) {
+                        setSeverity(el['kpi-confidence-card'], 'ok');
+                    } else {
+                        setSeverity(el['kpi-confidence-card'], confidenceSummary.level === 'high'
+                            ? 'ok'
+                            : (confidenceSummary.level === 'medium' ? 'warn' : 'crit'));
+                    }
+                }
+
+                if (!topEndpoints || topEndpoints.length === 0) {
+                    el['kpi-topendpoints'].innerHTML = '<div class="empty-inline">No traffic yet</div>';
+                } else {
+                    var maxCount = Math.max.apply(null, topEndpoints.map(function (x) { return x.count ?? x.Count ?? 0; }));
+                    el['kpi-topendpoints'].innerHTML = topEndpoints.slice(0, 4).map(function (ep) {
+                        var path = ep.path ?? ep.Path ?? '/';
+                        var count = Number(ep.count ?? ep.Count ?? 0);
+                        var pct = maxCount > 0 ? Math.round((count / maxCount) * 100) : 0;
+                        return '<div class="ep-row">' +
+                            '<span class="ep-path">' + escapeHtml(path) + '</span>' +
+                            '<div class="ep-bar-track"><div class="ep-bar" style="width:' + pct + '%"></div></div>' +
+                            '<span class="ep-count">' + count + '</span>' +
+                            '</div>';
+                    }).join('');
+                }
+            }
+
+            function mergeChartCaptures(items) {
+                items.forEach(function (item) {
+                    if (!state.chartCaptures.some(function (existing) { return existing.id === item.id; })) state.chartCaptures.push(item);
+                });
+
+                if (state.chartCaptures.length > MAX_CHART_CAPTURES) {
+                    state.chartCaptures = state.chartCaptures.slice(state.chartCaptures.length - MAX_CHART_CAPTURES);
+                }
+            }
+
+            async function loadRecent(page) {
+                state.page = Math.max(1, page);
+                var response = await fetch(buildCapturesUrl(state.page));
+                if (!response.ok) {
+                    response = await fetch(buildLegacyCapturesUrl(state.page));
+                }
+                if (!response.ok) throw new Error('Failed to load captures. Status ' + response.status);
+
+                var payload = await response.json();
+                var items = Array.isArray(payload)
+                    ? payload
+                    : (payload.results ?? payload.Results ?? payload.items ?? payload.Items ?? []);
+
+                var totalCount = Number(payload.total ?? payload.Total ?? payload.totalCount ?? payload.TotalCount ?? items.length);
+                var currentPage = Number(payload.page ?? payload.Page ?? state.page);
+                var returnedPageSize = Number(payload.pageSize ?? payload.PageSize ?? state.pageSize);
+                var totalPages = Number(payload.totalPages ?? payload.TotalPages ?? Math.ceil(totalCount / Math.max(1, returnedPageSize)));
+
+                state.page = Number.isFinite(currentPage) ? currentPage : state.page;
+                state.totalCount = Number.isFinite(totalCount) ? totalCount : items.length;
+                state.totalPages = Math.max(1, Number.isFinite(totalPages) ? totalPages : 1);
+                state.pageSize = Math.max(1, returnedPageSize);
+
+                state.captures = applyObservationFilter(items.map(normalizeCapture));
+                mergeChartCaptures(state.captures);
+
+                state.captures.forEach(function (c) {
+                    if (Date.now() - c.timestamp <= 60000) state.recentTimestamps.push(c.timestamp);
+                });
+
+                renderTable();
+                renderChart();
+            }
+
+            async function loadStats() {
+                if (state.observation.isConnected) {
+                    state.stats = buildStatsFromCaptures(state.chartCaptures);
+                    renderKPIs();
+                    return;
+                }
+
+                var response = await fetch('/footlook/captures/stats');
+                if (!response.ok) throw new Error('Failed to load stats. Status ' + response.status);
+                state.stats = await response.json();
+                renderKPIs();
+            }
+
+            async function refreshAll(page) {
+                await loadRecent(page ?? state.page);
                 await loadStats();
             }
-            catch (err) {
-                document.getElementById("connectionStatus").textContent =
-                    "Dashboard failed to start.";
 
-                console.error("Dashboard startup error:", err);
+            function updateLiveIndicators() {
+                if (state.livePaused) {
+                    el['live-dot'].className = 'live-dot paused';
+                    el['live-status-text'].textContent = 'Live stream paused';
+                    el['pause-live-btn'].innerHTML = '<span class="dot-mini"></span>Resume Captures';
+                    el['pause-live-btn'].classList.add('is-paused');
+                } else {
+                    el['pause-live-btn'].innerHTML = '<span class="dot-mini"></span>Pause Captures';
+                    el['pause-live-btn'].classList.remove('is-paused');
+                }
             }
-        }
 
-        startDashboard();
-        setInterval(() => {
-            const oneMinuteAgo = Date.now() - 60000;
-
-            requestTimestamps = requestTimestamps.filter(timestamp =>
-                timestamp > oneMinuteAgo
-            );
-
-            document.getElementById("requestsPerMinute").textContent =
-                requestTimestamps.length;
-                rpmHistory.push({
-                time: new Date(),
-                value: requestTimestamps.length
+            function wireEvents() {
+                document.querySelectorAll('[data-filter-status]').forEach(function (btn) {
+                    btn.addEventListener('click', function () {
+                        document.querySelectorAll('[data-filter-status]').forEach(function (b) { b.classList.remove('active'); });
+                        btn.classList.add('active');
+                        state.filters.status = btn.getAttribute('data-filter-status');
+                        refreshAll(1).catch(console.error);
+                    });
                 });
 
-              if (rpmHistory.length > 30) {
-              rpmHistory.shift();
-        }
+                document.querySelectorAll('[data-filter-method]').forEach(function (btn) {
+                    btn.addEventListener('click', function () {
+                        document.querySelectorAll('[data-filter-method]').forEach(function (b) { b.classList.remove('active'); });
+                        btn.classList.add('active');
+                        state.filters.method = btn.getAttribute('data-filter-method');
+                        refreshAll(1).catch(console.error);
+                    });
+                });
 
-          updateRpmChart();
-        }, 5000);
+                var searchTimer;
+                el['search-path'].addEventListener('input', function (e) {
+                    state.filters.search = e.target.value.trim().toLowerCase();
+                    clearTimeout(searchTimer);
+                    searchTimer = setTimeout(function () {
+                        refreshAll(1).catch(console.error);
+                    }, 250);
+                });
+
+                el['prev-page-btn'].addEventListener('click', async function () {
+                    if (state.page > 1) await refreshAll(state.page - 1);
+                });
+
+                el['next-page-btn'].addEventListener('click', async function () {
+                    if (state.page < state.totalPages) await refreshAll(state.page + 1);
+                });
+
+                el['capture-tbody'].addEventListener('click', function (e) {
+                    var row = e.target.closest('.cap-row');
+                    if (!row) return;
+                    state.selectedId = row.getAttribute('data-id');
+                    renderTable();
+                });
+
+                el['pause-live-btn'].addEventListener('click', function () {
+                    state.livePaused = !state.livePaused;
+                    updateLiveIndicators();
+                    if (!state.livePaused) refreshAll(1).catch(console.error);
+                });
+
+                document.getElementById('export-json-btn').addEventListener('click', function () {
+                    var data = JSON.stringify(state.captures, null, 2);
+                    var blob = new Blob([data], { type: 'application/json' });
+                    var url = URL.createObjectURL(blob);
+                    var a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'api-captures.json';
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+                });
+
+
+
+                document.getElementById('clear-captures-btn').addEventListener('click', async function () {
+                    if (!confirmDangerAction('Clear Stored Captures', 'yes, clear stored captures')) {
+                        toast('Clear Stored Captures cancelled');
+                        return;
+                    }
+
+                    var response = await fetch('/footlook/captures', { method: 'DELETE' });
+                    if (!response.ok) {
+                        toast('Failed to clear captures');
+                        return;
+                    }
+                    state.page = 1;
+                    await refreshAll(1);
+                    toast('Stored captures cleared');
+
+                    window.location.href = window.location.pathname + '?t=' + Date.now();
+
+                    if (Array.isArray(captures)) captures.length = 0;
+                    if (Array.isArray(requestTimestamps)) requestTimestamps.length = 0;
+                    clearRpmTimelineGraph();
+                    if (Array.isArray(window.rpmLabels)) window.rpmLabels.length = 0;
+                    if (Array.isArray(window.rpmValues)) window.rpmValues.length = 0;
+                });
+
+                if (el['connect-btn'] && el['site-url-input']) {
+                    el['connect-btn'].addEventListener('click', async function () {
+                        if (state.observation.isConnected) {
+                            disconnectObservedSite({ closeTab: true });
+                            await refreshAll(1);
+                            toast('Disconnected from observed site');
+                            return;
+                        }
+
+                        var normalizedUrl = normalizeSiteUrl(el['site-url-input'].value);
+                        if (!normalizedUrl) {
+                            toast('Enter a valid site URL');
+                            setConnectButtonState('default');
+                            return;
+                        }
+
+                        setConnectButtonState('checking');
+
+                        var tabId = createObservationId('tabId');
+                        var sessionId = createObservationId('sessionId');
+                        var trackedUrl = buildTrackedSiteUrl(normalizedUrl, tabId, sessionId);
+
+                        var openedTab = null;
+                        try {
+                            openedTab = window.open(trackedUrl, '_blank', 'noopener,noreferrer');
+                        } catch {
+                            openedTab = null;
+                        }
+
+                        var canOpenInTab = !!openedTab;
+
+                        if (canOpenInTab) {
+                            state.site = normalizedUrl;
+                            state.observation = {
+                                isConnected: true,
+                                tabId: tabId,
+                                sessionId: sessionId,
+                                siteUrl: normalizedUrl,
+                                trackedUrl: trackedUrl
+                            };
+                            observedTabWindow = openedTab;
+                            startObservedTabMonitoring();
+                            notifyOutcomeSessionStart(sessionId, tabId, normalizedUrl);
+
+                            if (el['site-label']) {
+                                el['site-label'].textContent = state.site;
+                            }
+
+                            await refreshAll(1);
+                            setConnectButtonState('connected');
+                            toast('Connected • ' + tabId + ' • ' + sessionId);
+                            return;
+                        }
+
+                        setConnectButtonState('default');
+                        toast('Could not open that site in a new tab. Check popup permissions.');
+                    });
+                }
+            }
+
+            async function wireLiveStream() {
+                connection = new signalR.HubConnectionBuilder()
+                    .withUrl('/footlook/live')
+                    .withAutomaticReconnect()
+                    .build();
+
+                connection.on('captureReceived', async function (payload) {
+                    var capture = normalizeCapture(payload);
+                    if (!isCaptureInObservedSession(capture)) return;
+
+                    mergeChartCaptures([capture]);
+                    state.recentTimestamps.push(Date.now());
+
+                    renderKPIs();
+                    renderChart();
+
+                    if (!state.livePaused && state.page === 1) await refreshAll(1);
+                });
+
+                connection.onreconnecting(function () { el['live-status-text'].textContent = 'Reconnecting...'; });
+                connection.onreconnected(function () { updateLiveIndicators(); });
+                connection.onclose(function () {
+                    el['live-dot'].className = 'live-dot paused';
+                    el['live-status-text'].textContent = 'Disconnected from live stream';
+                });
+
+                await connection.start();
+            }
+
+            async function init() {
+                try {
+                    applySiteConnectorVisibility();
+                    cacheEls();
+                    wireEvents();
+                    updateLiveIndicators();
+                    if (el['site-label']) {
+                        el['site-label'].textContent = state.site;
+                    }
+                    setConnectButtonState('default');
+
+                    await refreshAll(1);
+                    await wireLiveStream();
+                } catch (err) {
+                    console.error(err);
+                    toast('Failed to initialize dashboard');
+                }
+            }
+
+            document.addEventListener('DOMContentLoaded', function () { init(); });
+
+            (function wirePauseResumeButton() {
+                const button = document.querySelector('#pauseCapturesBtn')
+                    || Array.from(document.querySelectorAll('button')).find(b =>
+                        (b.textContent || '').trim().toLowerCase() === 'pause captures' ||
+                        (b.textContent || '').trim().toLowerCase() === 'resume captures');
+
+                if (!button) return;
+
+                let isPaused = false;
+
+                async function syncButtonFromServerStatus() {
+                    try {
+                        const response = await fetch('/footlook/captures/status', { method: 'GET' });
+                        if (!response.ok) return;
+
+                        const data = await response.json();
+                        // CaptureEnabled: true => currently running => button should offer Pause
+                        isPaused = data?.captureEnabled === false || data?.CaptureEnabled === false;
+                        button.textContent = isPaused ? 'Resume Captures' : 'Pause Captures';
+                    } catch {
+                        // fallback to current button text if status call fails
+                        isPaused = (button.textContent || '').trim().toLowerCase() === 'resume captures';
+                    }
+                }
+
+                // Sync initial state when page loads
+                syncButtonFromServerStatus();
+
+                button.addEventListener('click', async (event) => {
+                    event.preventDefault();
+
+                    const endpoint = isPaused ? '/footlook/resume' : '/footlook/pause';
+
+                    try {
+                        const response = await fetch(endpoint, { method: 'POST' });
+                        if (!response.ok) return;
+
+                        isPaused = !isPaused;
+                        button.textContent = isPaused ? 'Resume Captures' : 'Pause Captures';
+                    } catch {
+                        // no-op
+                    }
+                });
+            })();
+        })();
+
+        // Add helper near other chart helpers.
+        function clearRpmTimelineGraph() {
+            // Support common chart variable names if already present.
+            const chart = window.requestsPerMinuteChart
+                || window.rpmTimelineChart
+                || window.requestsPerMinuteTimelineChart;
+
+            if (!chart || !chart.data) return;
+
+            chart.data.labels = [];
+
+            if (Array.isArray(chart.data.datasets)) {
+                chart.data.datasets.forEach(ds => {
+                    ds.data = [];
+                });
+            }
+
+            chart.update();
+        }
     </script>
 </body>
 </html>
