@@ -109,10 +109,25 @@ namespace FootLook.Core.Extensions
                     : Results.NotFound(new { Message = "No investigation found for key.", key });
             });
 
-            endpoints.MapGet($"{prefix}/captures", (IShadowCaptureStore store, int page = 1, int pageSize = 50, int? minStatusCode = null, long? minDuration = null,
+            endpoints.MapGet($"{prefix}/captures", (HttpContext httpContext, IShadowCaptureStore store, int page = 1, int pageSize = 50, int? minStatusCode = null, long? minDuration = null,
               string? correlationId = null, string sortBy = "timestamp", string sortDirection = "desc", bool failedOnly = false, string? pathContains = null) =>
             {
                 var captures = store.GetAll().AsEnumerable();
+                var scopeId = httpContext.Request.Cookies["footlook_scope_id"];
+                if (string.IsNullOrWhiteSpace(scopeId))
+                {
+                    scopeId = Guid.NewGuid().ToString("D");
+                    httpContext.Response.Cookies.Append("footlook_scope_id", scopeId, new CookieOptions
+                    {
+                        HttpOnly = true,
+                        IsEssential = true,
+                        SameSite = SameSiteMode.Lax,
+                        Secure = httpContext.Request.IsHttps,
+                        Expires = DateTimeOffset.UtcNow.AddYears(1)
+                    });
+                }
+
+                captures = captures.Where(c => c.CaptureScopeId == scopeId);
 
                 if (failedOnly)
                 {
@@ -180,9 +195,24 @@ namespace FootLook.Core.Extensions
             });
 
             endpoints.MapGet($"{prefix}/captures/stats",
-            (IShadowCaptureStore store) =>
+            (HttpContext httpContext, IShadowCaptureStore store) =>
             {
-                var captures = store.GetAll().ToList();
+                var scopeId = httpContext.Request.Cookies["footlook_scope_id"];
+                if (string.IsNullOrWhiteSpace(scopeId))
+                {
+                    scopeId = Guid.NewGuid().ToString("D");
+                    httpContext.Response.Cookies.Append("footlook_scope_id", scopeId, new CookieOptions
+                    {
+                        HttpOnly = true,
+                        IsEssential = true,
+                        SameSite = SameSiteMode.Lax,
+                        Secure = httpContext.Request.IsHttps,
+                        Expires = DateTimeOffset.UtcNow.AddYears(1)
+                    });
+                }
+                var captures = store.GetAll()
+                    .Where(c => c.CaptureScopeId == scopeId)
+                    .ToList();
 
                 var totalRequests = captures.Count;
                 var failedRequests = captures.Count(c =>

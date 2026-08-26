@@ -184,6 +184,7 @@ namespace FootLook.Core.Middleware
 
         public async Task InvokeAsync(HttpContext context)
         {
+            var captureScopeId = GetOrCreateCaptureScopeId(context);
             if (!_captureRuntimeState.IsCaptureEnabled)
             {
                 await _next(context);
@@ -468,7 +469,59 @@ namespace FootLook.Core.Middleware
             var path = context.Request.Path.Value ?? string.Empty;
 
             return _options.IgnoredPaths.Any(ignoredPath =>
-                path.StartsWith(ignoredPath, StringComparison.OrdinalIgnoreCase));
+            {
+                var candidate = (ignoredPath ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(candidate))
+                {
+                    return false;
+                }
+
+                // Wildcard suffix support, e.g. "/.env*"
+                if (candidate.EndsWith("*", StringComparison.Ordinal))
+                {
+                    var prefix = candidate[..^1];
+                    if (string.IsNullOrWhiteSpace(prefix))
+                    {
+                        return false;
+                    }
+
+                    return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+                }
+
+                // Special-case root path so ignoring "/" does not ignore every endpoint.
+                if (string.Equals(candidate, "/", StringComparison.OrdinalIgnoreCase))
+                {
+                    return string.Equals(path, "/", StringComparison.OrdinalIgnoreCase);
+                }
+
+                // Prefix/path-segment support, e.g. "/.git" catches "/.git/HEAD"
+                return string.Equals(path, candidate, StringComparison.OrdinalIgnoreCase)
+                    || path.StartsWith(candidate + "/", StringComparison.OrdinalIgnoreCase);
+            });
+        }
+
+        private static string GetOrCreateCaptureScopeId(HttpContext context)
+        {
+            const string cookieName = "footlook_scope_id";
+
+            if (context.Request.Cookies.TryGetValue(cookieName, out var existing)
+                && !string.IsNullOrWhiteSpace(existing))
+            {
+                return existing;
+            }
+
+            var scopeId = Guid.NewGuid().ToString("D");
+
+            context.Response.Cookies.Append(cookieName, scopeId, new CookieOptions
+            {
+                HttpOnly = true,
+                IsEssential = true,
+                SameSite = SameSiteMode.Lax,
+                Secure = context.Request.IsHttps,
+                Expires = DateTimeOffset.UtcNow.AddYears(1)
+            });
+
+            return scopeId;
         }
 
         private Dictionary<string, string> CaptureHeaders(HttpContext context, out int maskedCount)

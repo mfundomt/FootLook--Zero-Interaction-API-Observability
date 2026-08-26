@@ -70,6 +70,7 @@ namespace FootLook.Core.Models
 
         public string? ClientIp { get; init; }  
 
+        public string? CaptureScopeId { get; init; }
 
     }
 }

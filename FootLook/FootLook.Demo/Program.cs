@@ -12,6 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 ;
+builder.Services.AddHttpContextAccessor();
 //Register SignalR for real-time updates
 builder.Services.AddSignalR();
 builder.Services.AddFootLookMongoRepository();
@@ -35,6 +36,8 @@ builder.Services.AddFootLook(options =>
     // Ignore certain paths from being captured
     options.IgnoredPaths.Add("/footlook");
     options.IgnoredPaths.Add("/footlook.html");
+    options.IgnoredPaths.Add("/");
+    options.IgnoredPaths.Add("/robots");
     options.IgnoredPaths.Add("/footlook/pause");
     options.IgnoredPaths.Add("/footlook/resume");
     options.IgnoredPaths.Add("/swagger");
@@ -47,6 +50,19 @@ builder.Services.AddFootLook(options =>
     options.AllowedMethods.Add("POST");
     options.AllowedMethods.Add("PATCH");
     options.AllowedMethods.Add("PUT");
+    // Noise/scanner filtering from config (applied in all environments).
+    var ignoredPrefixes =
+        builder.Configuration
+            .GetSection("FootLook:IgnoredPathPrefixes")
+            .Get<string[]>() ?? Array.Empty<string>();
+
+    foreach (var prefix in ignoredPrefixes)
+    {
+        if (!string.IsNullOrWhiteSpace(prefix))
+        {
+            options.IgnoredPaths.Add(prefix.Trim());
+        }
+    }
 //  options.AllowedMethods.Add("DELETE");
 });
 
