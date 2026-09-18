@@ -76,6 +76,35 @@ namespace FootLook.Core.Options
         public string MongoDatabaseName { get; set; } = "footlook";
         public string MongoCollectionName { get; set; } = "captures";
         public bool UseMongoSink { get; set; } = false;
+
+        /// <summary>
+        /// Header REST callers must send a configured key in: "{ApiKeyHeaderName}: {key}".
+        /// </summary>
+        public string ApiKeyHeaderName { get; set; } = "X-FootLook-Api-Key";
+
+        /// <summary>
+        /// Query string parameter the live SignalR hub accepts a key on, since browsers
+        /// cannot attach custom headers to a WebSocket upgrade request. Example:
+        /// /footlook/live?footlook_api_key=... . Only used when RequireApiKey is true.
+        /// </summary>
+        public string ApiKeyQueryParameterName { get; set; } = "footlook_api_key";
+
+        /// <summary>
+        /// When true (the default), every /footlook/* endpoint except /health requires a
+        /// valid key from <see cref="ApiKeys"/>. This is on by default because FootLook
+        /// observes and can expose live production traffic - it should not be reachable by
+        /// anyone who can route to the host. Set to false only for local/throwaway setups
+        /// where the host is not reachable by anyone untrusted.
+        /// </summary>
+        public bool RequireApiKey { get; set; } = true;
+
+        /// <summary>
+        /// Keys callers may authenticate with. A key with IsAdmin=false can read/clear only
+        /// its own capture scope; IsAdmin=true is required for actions that affect every
+        /// caller at once (pause/resume capture, clearing the privacy audit log, self-heal,
+        /// setup profiles) since those are host-wide, not per-caller.
+        /// </summary>
+        public List<FootLookApiKey> ApiKeys { get; set; } = new();
     }
-       
+
 }

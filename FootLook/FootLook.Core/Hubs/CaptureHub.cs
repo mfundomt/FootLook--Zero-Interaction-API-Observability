@@ -1,4 +1,6 @@
-﻿using Microsoft.AspNetCore.SignalR;
+using FootLook.Core.Options;
+using FootLook.Core.Security;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Threading.Tasks;
@@ -9,10 +11,12 @@ namespace FootLook.Core.Hubs
     {
         private const string ScopeCookieName = "footlook_scope_id";
 
+        private readonly FootLookOptions _options;
         private readonly ILogger<CaptureHub> _logger;
 
-        public CaptureHub(ILogger<CaptureHub> logger)
+        public CaptureHub(FootLookOptions options, ILogger<CaptureHub> logger)
         {
+            _options = options;
             _logger = logger;
         }
 
@@ -25,7 +29,32 @@ namespace FootLook.Core.Hubs
 
         public override async Task OnConnectedAsync()
         {
-            var scopeId = Context.GetHttpContext()?.Request.Cookies[ScopeCookieName];
+            var httpContext = Context.GetHttpContext();
+
+            if (_options.RequireApiKey)
+            {
+                // Browsers cannot attach custom headers to a WebSocket upgrade request, so
+                // the key travels as a query string parameter on the hub URL for that
+                // transport; long-polling/SSE can still send it as a header.
+                var providedKey = httpContext?.Request.Query[_options.ApiKeyQueryParameterName].ToString();
+
+                if (string.IsNullOrWhiteSpace(providedKey))
+                {
+                    providedKey = httpContext?.Request.Headers[_options.ApiKeyHeaderName].ToString();
+                }
+
+                var matchedKey = FootLookApiKeyMatcher.Match(_options, providedKey);
+
+                if (matchedKey is null)
+                {
+                    // Aborting here rejects the connection before it joins any group, so an
+                    // unauthenticated client never receives a single captureReceived event.
+                    Context.Abort();
+                    return;
+                }
+            }
+
+            var scopeId = httpContext?.Request.Cookies[ScopeCookieName];
 
             if (!string.IsNullOrWhiteSpace(scopeId))
             {
