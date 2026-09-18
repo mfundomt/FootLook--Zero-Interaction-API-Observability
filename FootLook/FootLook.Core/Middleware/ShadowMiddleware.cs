@@ -379,6 +379,7 @@ namespace FootLook.Core.Middleware
                         ResponseBodySkippedReason = "Endpoint threw before a response body was produced",
                         ClientIp = failureClientIp,
                         UserAgent = failureUserAgent,
+                        CaptureScopeId = captureScopeId,
                     };
 
                     await _queue.EnqueueAsync(failureCapturedRequest);
