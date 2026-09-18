@@ -68,7 +68,21 @@ namespace FootLook.Core.Services
 
                         try
                         {
-                            await _hub.Clients.All.SendAsync("captureReceived", capturedRequest, cancellationToken: stoppingToken);
+                            if (!string.IsNullOrWhiteSpace(capturedRequest.CaptureScopeId))
+                            {
+                                await _hub.Clients
+                                    .Group(CaptureHub.GroupNameForScope(capturedRequest.CaptureScopeId))
+                                    .SendAsync("captureReceived", capturedRequest, cancellationToken: stoppingToken);
+                            }
+                            else
+                            {
+                                // No scope on the capture (shouldn't happen once ShadowMiddleware
+                                // always sets one) - drop the broadcast rather than fan it out to
+                                // every connected dashboard regardless of scope.
+                                _logger.LogWarning(
+                                    "FootLook capture {Id} has no CaptureScopeId; skipping live broadcast to avoid a cross-scope leak.",
+                                    capturedRequest.Id);
+                            }
                         }
                         catch (Exception broadcastEx)
                         {

@@ -10,6 +10,35 @@ namespace FootLook.Core.Extensions
 {
     public static class FootLookEndpointExtensions
     {
+        private const string ScopeCookieName = "footlook_scope_id";
+
+        /// <summary>
+        /// Resolves the caller's capture scope from the <c>footlook_scope_id</c> cookie,
+        /// minting and setting one if the caller doesn't have it yet. Every endpoint that
+        /// reads or deletes captures must go through this so scope enforcement can't be
+        /// forgotten on a new route.
+        /// </summary>
+        private static string ResolveScopeId(HttpContext httpContext)
+        {
+            var scopeId = httpContext.Request.Cookies[ScopeCookieName];
+            if (!string.IsNullOrWhiteSpace(scopeId))
+            {
+                return scopeId;
+            }
+
+            scopeId = Guid.NewGuid().ToString("D");
+            httpContext.Response.Cookies.Append(ScopeCookieName, scopeId, new CookieOptions
+            {
+                HttpOnly = true,
+                IsEssential = true,
+                SameSite = SameSiteMode.Lax,
+                Secure = httpContext.Request.IsHttps,
+                Expires = DateTimeOffset.UtcNow.AddYears(1)
+            });
+
+            return scopeId;
+        }
+
         public static IEndpointRouteBuilder MapFootLookEndpoints(this IEndpointRouteBuilder endpoints, FootLookOptions options)
         {
             var prefix = options.EndpointBasePath.TrimEnd('/');
@@ -113,19 +142,7 @@ namespace FootLook.Core.Extensions
               string? correlationId = null, string sortBy = "timestamp", string sortDirection = "desc", bool failedOnly = false, string? pathContains = null) =>
             {
                 var captures = store.GetAll().AsEnumerable();
-                var scopeId = httpContext.Request.Cookies["footlook_scope_id"];
-                if (string.IsNullOrWhiteSpace(scopeId))
-                {
-                    scopeId = Guid.NewGuid().ToString("D");
-                    httpContext.Response.Cookies.Append("footlook_scope_id", scopeId, new CookieOptions
-                    {
-                        HttpOnly = true,
-                        IsEssential = true,
-                        SameSite = SameSiteMode.Lax,
-                        Secure = httpContext.Request.IsHttps,
-                        Expires = DateTimeOffset.UtcNow.AddYears(1)
-                    });
-                }
+                var scopeId = ResolveScopeId(httpContext);
 
                 captures = captures.Where(c => c.CaptureScopeId == scopeId);
 
@@ -197,19 +214,7 @@ namespace FootLook.Core.Extensions
             endpoints.MapGet($"{prefix}/captures/stats",
             (HttpContext httpContext, IShadowCaptureStore store) =>
             {
-                var scopeId = httpContext.Request.Cookies["footlook_scope_id"];
-                if (string.IsNullOrWhiteSpace(scopeId))
-                {
-                    scopeId = Guid.NewGuid().ToString("D");
-                    httpContext.Response.Cookies.Append("footlook_scope_id", scopeId, new CookieOptions
-                    {
-                        HttpOnly = true,
-                        IsEssential = true,
-                        SameSite = SameSiteMode.Lax,
-                        Secure = httpContext.Request.IsHttps,
-                        Expires = DateTimeOffset.UtcNow.AddYears(1)
-                    });
-                }
+                var scopeId = ResolveScopeId(httpContext);
                 var captures = store.GetAll()
                     .Where(c => c.CaptureScopeId == scopeId)
                     .ToList();
@@ -274,7 +279,8 @@ namespace FootLook.Core.Extensions
 
 
             endpoints.MapGet($"{prefix}/captures/recent",
-            (IShadowCaptureStore store,
+            (HttpContext httpContext,
+                   IShadowCaptureStore store,
                    ProductOutcomeMetricsService outcomes,
                    int? count = null,
                    int? page = null,
@@ -284,8 +290,10 @@ namespace FootLook.Core.Extensions
                    double minConfidence = 0.65,
                    string? siteHost = null) =>
             {
+                var scopeId = ResolveScopeId(httpContext);
                 var orderedCaptures = store
                     .GetAll()
+                    .Where(c => c.CaptureScopeId == scopeId)
                     .OrderByDescending(c => c.TimestampUtc)
                     .ToList();
                 var totalEvaluated = orderedCaptures.Count;
@@ -385,7 +393,8 @@ namespace FootLook.Core.Extensions
             });
 
             endpoints.MapGet($"{prefix}/captures/identity",
-            (IShadowCaptureStore store,
+            (HttpContext httpContext,
+                   IShadowCaptureStore store,
                    string footlookSessionId,
                    string footlookTabId,
                    int page = 1,
@@ -398,6 +407,7 @@ namespace FootLook.Core.Extensions
                     return Results.BadRequest("footlookSessionId and footlookTabId are required.");
                 }
 
+                var scopeId = ResolveScopeId(httpContext);
                 var resolver = new CaptureIdentityResolver();
                 var threshold = Math.Clamp(minConfidence, 0.0, 1.0);
                 var currentPage = Math.Max(1, page);
@@ -405,6 +415,7 @@ namespace FootLook.Core.Extensions
 
                 var scored = store
                     .GetAll()
+                    .Where(c => c.CaptureScopeId == scopeId)
                     .OrderByDescending(c => c.TimestampUtc)
                     .Select(c =>
                     {
@@ -437,20 +448,22 @@ namespace FootLook.Core.Extensions
 
             endpoints.MapGet(
                 $"{prefix}/captures/{{id:guid}}",
-                (InMemorySink memorySink, Guid id) =>
+                (HttpContext httpContext, IShadowCaptureStore store, Guid id) =>
                 {
-                    var capture = memorySink
-            .GetAll()
-            .FirstOrDefault(c => c.Id == id);
+                    var scopeId = ResolveScopeId(httpContext);
+                    var capture = store.GetById(id);
 
-                    return capture is not null
+                    // Scope mismatch is reported the same as "not found" so a caller can't
+                    // use this route to probe for the existence of another scope's captures.
+                    return capture is not null && capture.CaptureScopeId == scopeId
             ? Results.Ok(capture)
             : Results.NotFound();
                 });
 
-            endpoints.MapDelete($"{prefix}/captures", (IShadowCaptureStore store) =>
+            endpoints.MapDelete($"{prefix}/captures", (HttpContext httpContext, IShadowCaptureStore store) =>
             {
-                store.Clear();
+                var scopeId = ResolveScopeId(httpContext);
+                store.Clear(scopeId);
                 return Results.Ok(new
                 {
                     MessageProcessingHandler = "FootLook captures cleared."
@@ -458,7 +471,8 @@ namespace FootLook.Core.Extensions
             });
 
             endpoints.MapGet($"{prefix}/captures/history",
-            (IShadowCaptureStore store,
+            (HttpContext httpContext,
+                   IShadowCaptureStore store,
                    int count = 50) =>
             {
                 if (count <= 0)
@@ -466,8 +480,10 @@ namespace FootLook.Core.Extensions
                     return Results.BadRequest("count must be greater than zero.");
                 }
 
+                var scopeId = ResolveScopeId(httpContext);
                 var captures = store
                     .GetAll()
+                    .Where(c => c.CaptureScopeId == scopeId)
                     .OrderByDescending(c => c.TimestampUtc)
                     .Take(count)
                     .ToList();
