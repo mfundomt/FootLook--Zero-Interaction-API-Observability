@@ -131,7 +131,8 @@ builder.Services.AddFootLook(options =>
 	options.IgnoredPaths.Add("/favicon.ico");
 	options.IgnoredPaths.Add("/.well-known");
 
-	// HTTP methods allowed for CORS on the FootLook endpoints
+	// HTTP methods FootLook will capture (not related to CORS - this filters which
+	// requests get observed, it does not affect cross-origin browser permissions)
 	options.AllowedMethods.Add("GET");
 	options.AllowedMethods.Add("POST");
 	options.AllowedMethods.Add("PATCH");
@@ -154,7 +155,7 @@ builder.Services.AddFootLook(options =>
 | `ServiceName` | Logical service name shown in captures. | `"MyApi"` |
 | `EnvironmentName` | Environment name shown in captures. | `Development` |
 | `IgnoredPaths` | Paths excluded from capture. | dashboard/swagger paths |
-| `AllowedMethods` | HTTP methods allowed via CORS on endpoints. | `GET`, `POST`, ... |
+| `AllowedMethods` | HTTP methods FootLook will capture; empty list means all methods. Not related to CORS. | `GET`, `POST`, ... |
 
 ### Example `appsettings.json`
 
