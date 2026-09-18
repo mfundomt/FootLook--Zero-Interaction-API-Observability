@@ -101,6 +101,16 @@ namespace FootLook.Core.Options
 
         public int MaxInMemoryCaptures { get; set; } = 1000;
 
+        /// <summary>
+        /// Soft cap on the in-memory store's total estimated size (captured body text +
+        /// headers, roughly), in bytes. MaxInMemoryCaptures alone assumes captures are
+        /// small - with MaxBodyLength set high, a worst case of MaxInMemoryCaptures
+        /// large-bodied captures could still balloon memory well past what most hosts
+        /// intend. Whichever cap is hit first evicts the oldest capture. 0 disables the
+        /// byte cap and relies on MaxInMemoryCaptures alone (previous behavior).
+        /// </summary>
+        public long MaxInMemoryCaptureBytes { get; set; } = 200 * 1024 * 1024; // 200MB
+
         public long MaxFileSizeBytes { get; set; } = 100 * 1024 * 1024; // 100MB
 
         public int RetentionDays { get; set; } = 30;

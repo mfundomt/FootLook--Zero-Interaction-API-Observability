@@ -94,8 +94,40 @@ public class MongoCaptureRepository : ICaptureRepository
         long? minDuration = null,
         string? correlationId = null)
     {
+        // Previously ignored every parameter and just returned the first 100 documents
+        // unconditionally - callers asking for a specific path/status/duration/correlation
+        // got unrelated results back with no indication their filters did nothing.
+        var filters = new List<FilterDefinition<CapturedRequest>>();
+
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            filters.Add(Builders<CapturedRequest>.Filter.Regex(
+                x => x.Path,
+                new MongoDB.Bson.BsonRegularExpression(System.Text.RegularExpressions.Regex.Escape(path), "i")));
+        }
+
+        if (minStatusCode.HasValue)
+        {
+            filters.Add(Builders<CapturedRequest>.Filter.Gte(x => x.StatusCode, minStatusCode.Value));
+        }
+
+        if (minDuration.HasValue)
+        {
+            filters.Add(Builders<CapturedRequest>.Filter.Gte(x => x.DurationMs, minDuration.Value));
+        }
+
+        if (!string.IsNullOrWhiteSpace(correlationId))
+        {
+            filters.Add(Builders<CapturedRequest>.Filter.Eq(x => x.CorrelationId, correlationId));
+        }
+
+        var filter = filters.Count == 0
+            ? Builders<CapturedRequest>.Filter.Empty
+            : Builders<CapturedRequest>.Filter.And(filters);
+
         return await _collection
-            .Find(_ => true)
+            .Find(filter)
+            .SortByDescending(x => x.TimestampUtc)
             .Limit(100)
             .ToListAsync();
     }
