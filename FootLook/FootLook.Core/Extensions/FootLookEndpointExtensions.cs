@@ -1,10 +1,11 @@
-﻿using FootLook.Core.Interfaces;
+using FootLook.Core.Interfaces;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using FootLook.Core.Options;
 using FootLook.Core.Models;
 using FootLook.Core.Services;
+using FootLook.Core.Security;
 
 namespace FootLook.Core.Extensions
 {
@@ -14,6 +15,8 @@ namespace FootLook.Core.Extensions
         {
             var prefix = options.EndpointBasePath.TrimEnd('/');
 
+            // /health is intentionally unauthenticated - it exposes no capture data, only
+            // that the subsystem is up, so basic liveness checks don't need a key.
             endpoints.MapGet($"{prefix}/health", (
                 FootLookOptions options,
                 IShadowSink sink) =>
@@ -29,7 +32,17 @@ namespace FootLook.Core.Extensions
                 });
             });
 
-            endpoints.MapGet($"{prefix}/dashboard/ops", (FootLookOptions options, CaptureReliabilityState reliabilityState, PrivacyAuditStore privacyAuditStore) =>
+            // Everything else requires a valid API key. Reads/writes that only affect the
+            // caller's own capture scope live in `group`; actions that affect every caller
+            // at once (pause/resume, privacy-audit clear, self-heal/setup) live in
+            // `adminGroup` and additionally require an admin-flagged key.
+            var group = endpoints.MapGroup(prefix)
+                .AddEndpointFilter(new FootLookApiKeyEndpointFilter(options, requireAdmin: false));
+
+            var adminGroup = endpoints.MapGroup(prefix)
+                .AddEndpointFilter(new FootLookApiKeyEndpointFilter(options, requireAdmin: true));
+
+            group.MapGet("/dashboard/ops", (FootLookOptions options, CaptureReliabilityState reliabilityState, PrivacyAuditStore privacyAuditStore) =>
             {
                 var health = reliabilityState.EvaluateOperationalHealth(options, 20);
                 var recentPrivacyEvents = privacyAuditStore.GetRecent(20);
@@ -47,13 +60,13 @@ namespace FootLook.Core.Extensions
                 });
             });
 
-            endpoints.MapGet($"{prefix}/dev/diagnostics", (FootLookOptions options, FootLookDeveloperExperienceService devx) =>
+            group.MapGet("/dev/diagnostics", (FootLookOptions options, FootLookDeveloperExperienceService devx) =>
             {
                 var diagnostics = devx.RunDiagnostics(options);
                 return Results.Ok(diagnostics);
             });
 
-            endpoints.MapPost($"{prefix}/dev/self-heal", (FootLookOptions options, FootLookDeveloperExperienceService devx) =>
+            adminGroup.MapPost("/dev/self-heal", (FootLookOptions options, FootLookDeveloperExperienceService devx) =>
             {
                 var result = devx.ApplySelfHealing(options);
                 return Results.Ok(new
@@ -64,7 +77,7 @@ namespace FootLook.Core.Extensions
                 });
             });
 
-            endpoints.MapPost($"{prefix}/dev/setup", (FootLookOptions options, FootLookDeveloperExperienceService devx, ProductOutcomeMetricsService outcomes, string? profile) =>
+            adminGroup.MapPost("/dev/setup", (FootLookOptions options, FootLookDeveloperExperienceService devx, ProductOutcomeMetricsService outcomes, string? profile) =>
             {
                 var selectedProfile = string.IsNullOrWhiteSpace(profile) ? "development" : profile;
                 var result = devx.ApplySetupProfile(options, selectedProfile);
@@ -78,30 +91,30 @@ namespace FootLook.Core.Extensions
                 });
             });
 
-            endpoints.MapGet($"{prefix}/outcomes/metrics", (ProductOutcomeMetricsService outcomes) =>
+            group.MapGet("/outcomes/metrics", (ProductOutcomeMetricsService outcomes) =>
             {
                 return Results.Ok(outcomes.Snapshot());
             });
 
-            endpoints.MapPost($"{prefix}/outcomes/session/start", (ProductOutcomeMetricsService outcomes, string sessionId, string tabId, string? siteUrl) =>
+            group.MapPost("/outcomes/session/start", (ProductOutcomeMetricsService outcomes, string sessionId, string tabId, string? siteUrl) =>
             {
                 outcomes.StartSession(sessionId, tabId, siteUrl);
                 return Results.Ok(new { Message = "Outcome session started.", sessionId, tabId });
             });
 
-            endpoints.MapPost($"{prefix}/outcomes/session/end", (ProductOutcomeMetricsService outcomes, string sessionId) =>
+            group.MapPost("/outcomes/session/end", (ProductOutcomeMetricsService outcomes, string sessionId) =>
             {
                 outcomes.EndSession(sessionId);
                 return Results.Ok(new { Message = "Outcome session ended.", sessionId });
             });
 
-            endpoints.MapPost($"{prefix}/outcomes/issue/start", (ProductOutcomeMetricsService outcomes, string key) =>
+            group.MapPost("/outcomes/issue/start", (ProductOutcomeMetricsService outcomes, string key) =>
             {
                 outcomes.StartIssueInvestigation(key);
                 return Results.Ok(new { Message = "Issue investigation started.", key });
             });
 
-            endpoints.MapPost($"{prefix}/outcomes/issue/complete", (ProductOutcomeMetricsService outcomes, string key) =>
+            group.MapPost("/outcomes/issue/complete", (ProductOutcomeMetricsService outcomes, string key) =>
             {
                 var completed = outcomes.CompleteIssueInvestigation(key, out var durationSeconds);
                 return completed
@@ -109,7 +122,7 @@ namespace FootLook.Core.Extensions
                     : Results.NotFound(new { Message = "No investigation found for key.", key });
             });
 
-            endpoints.MapGet($"{prefix}/captures", (HttpContext httpContext, IShadowCaptureStore store, int page = 1, int pageSize = 50, int? minStatusCode = null, long? minDuration = null,
+            group.MapGet("/captures", (HttpContext httpContext, IShadowCaptureStore store, int page = 1, int pageSize = 50, int? minStatusCode = null, long? minDuration = null,
               string? correlationId = null, string sortBy = "timestamp", string sortDirection = "desc", bool failedOnly = false, string? pathContains = null) =>
             {
                 var captures = store.GetAll().AsEnumerable();
@@ -194,7 +207,7 @@ namespace FootLook.Core.Extensions
                 });
             });
 
-            endpoints.MapGet($"{prefix}/captures/stats",
+            group.MapGet("/captures/stats",
             (HttpContext httpContext, IShadowCaptureStore store) =>
             {
                 var scopeId = httpContext.Request.Cookies["footlook_scope_id"];
@@ -273,7 +286,7 @@ namespace FootLook.Core.Extensions
             });
 
 
-            endpoints.MapGet($"{prefix}/captures/recent",
+            group.MapGet("/captures/recent",
             (IShadowCaptureStore store,
                    ProductOutcomeMetricsService outcomes,
                    int? count = null,
@@ -384,7 +397,7 @@ namespace FootLook.Core.Extensions
                 return Results.BadRequest("count must be greater than zero.");
             });
 
-            endpoints.MapGet($"{prefix}/captures/identity",
+            group.MapGet("/captures/identity",
             (IShadowCaptureStore store,
                    string footlookSessionId,
                    string footlookTabId,
@@ -435,8 +448,8 @@ namespace FootLook.Core.Extensions
                 });
             });
 
-            endpoints.MapGet(
-                $"{prefix}/captures/{{id:guid}}",
+            group.MapGet(
+                "/captures/{id:guid}",
                 (InMemorySink memorySink, Guid id) =>
                 {
                     var capture = memorySink
@@ -448,7 +461,7 @@ namespace FootLook.Core.Extensions
             : Results.NotFound();
                 });
 
-            endpoints.MapDelete($"{prefix}/captures", (IShadowCaptureStore store) =>
+            group.MapDelete("/captures", (IShadowCaptureStore store) =>
             {
                 store.Clear();
                 return Results.Ok(new
@@ -457,7 +470,7 @@ namespace FootLook.Core.Extensions
                 });
             });
 
-            endpoints.MapGet($"{prefix}/captures/history",
+            group.MapGet("/captures/history",
             (IShadowCaptureStore store,
                    int count = 50) =>
             {
@@ -475,48 +488,45 @@ namespace FootLook.Core.Extensions
                 return Results.Ok(captures);
             });
 
-            endpoints.MapPost($"{prefix}/captures/pause", (CaptureRuntimeState state, FootLookOptions options) =>
+            // Pause/resume affect capture for every caller at once (ShadowMiddleware observes
+            // all host traffic, not just the calling API key's own traffic), so these require
+            // an admin key rather than the baseline key used for reading/clearing one's own
+            // capture scope.
+            adminGroup.MapPost("/captures/pause", (CaptureRuntimeState state, FootLookOptions options) =>
             {
                 state.Pause();
                 options.Enabled = false;
                 return Results.Ok(new { CaptureEnabled = false, Message = "Capture paused." });
             });
 
-            endpoints.MapPost($"{prefix}/captures/resume", (CaptureRuntimeState state, FootLookOptions options) =>
+            adminGroup.MapPost("/captures/resume", (CaptureRuntimeState state, FootLookOptions options) =>
             {
                 state.Resume();
                 options.Enabled = true;
                 return Results.Ok(new { CaptureEnabled = true, Message = "Capture resumed." });
             });
 
-            endpoints.MapPost($"{prefix}/pause", (CaptureRuntimeState state, FootLookOptions options) =>
+            adminGroup.MapPost("/pause", (CaptureRuntimeState state, FootLookOptions options) =>
             {
                 state.Pause();
                 options.Enabled = false;
                 return Results.Ok(new { CaptureEnabled = false, Message = "Capture paused." });
             });
 
-            endpoints.MapPost("/footlool/pause", (CaptureRuntimeState state, FootLookOptions options) =>
-            {
-                state.Pause();
-                options.Enabled = false;
-                return Results.Ok(new { CaptureEnabled = false, Message = "Capture paused." });
-            });
-
-            endpoints.MapPost($"{prefix}/resume", (CaptureRuntimeState state, FootLookOptions options) =>
+            adminGroup.MapPost("/resume", (CaptureRuntimeState state, FootLookOptions options) =>
             {
                 state.Resume();
                 options.Enabled = true;
                 return Results.Ok(new { CaptureEnabled = true, Message = "Capture resumed." });
             });
 
-            endpoints.MapGet($"{prefix}/captures/status", (CaptureRuntimeState state, FootLookOptions options) =>
+            group.MapGet("/captures/status", (CaptureRuntimeState state, FootLookOptions options) =>
             {
                 var enabled = state.IsCaptureEnabled && options.Enabled;
                 return Results.Ok(new { CaptureEnabled = enabled });
             });
 
-            endpoints.MapGet($"{prefix}/privacy/status", (FootLookOptions options) =>
+            group.MapGet("/privacy/status", (FootLookOptions options) =>
             {
                 return Results.Ok(new
                 {
@@ -534,7 +544,7 @@ namespace FootLook.Core.Extensions
                 });
             });
 
-            endpoints.MapGet($"{prefix}/privacy/audit", (PrivacyAuditStore store, int count = 50) =>
+            group.MapGet("/privacy/audit", (PrivacyAuditStore store, int count = 50) =>
             {
                 var events = store.GetRecent(count);
                 return Results.Ok(new
@@ -544,13 +554,13 @@ namespace FootLook.Core.Extensions
                 });
             });
 
-            endpoints.MapDelete($"{prefix}/privacy/audit", (PrivacyAuditStore store) =>
+            adminGroup.MapDelete("/privacy/audit", (PrivacyAuditStore store) =>
             {
                 store.Clear();
                 return Results.Ok(new { Message = "Privacy audit log cleared." });
             });
 
-            endpoints.MapGet($"{prefix}/reliability/status", (FootLookOptions options, CaptureReliabilityState state, int recent = 20) =>
+            group.MapGet("/reliability/status", (FootLookOptions options, CaptureReliabilityState state, int recent = 20) =>
             {
                 var health = state.EvaluateOperationalHealth(options, recent);
 
@@ -570,7 +580,7 @@ namespace FootLook.Core.Extensions
                 });
             });
 
-            endpoints.MapGet($"{prefix}/operations/health", (FootLookOptions options, CaptureReliabilityState state, int recent = 20) =>
+            group.MapGet("/operations/health", (FootLookOptions options, CaptureReliabilityState state, int recent = 20) =>
             {
                 var health = state.EvaluateOperationalHealth(options, recent);
                 return Results.Ok(new

@@ -43,7 +43,6 @@ builder.Services.AddFootLook(options =>
     options.IgnoredPaths.Add("/swagger");
     options.IgnoredPaths.Add("/favicon.ico");
     options.IgnoredPaths.Add("/.well-known");
-    options.IgnoredPaths.Add("/pause");
 
     // Allow CORS for the FootLook endpoints
     options.AllowedMethods.Add("GET");
@@ -64,6 +63,18 @@ builder.Services.AddFootLook(options =>
         }
     }
 //  options.AllowedMethods.Add("DELETE");
+
+    // Dev-only default keys so the bundled demo/dashboard works out of the box.
+    // A real deployment should set FootLook:ApiKeys via configuration/user-secrets/
+    // environment variables instead of hardcoding keys in source.
+    var configuredKeys = builder.Configuration.GetSection("FootLook:ApiKeys").Get<List<FootLookApiKey>>();
+    options.ApiKeys = configuredKeys is { Count: > 0 }
+        ? configuredKeys
+        : new List<FootLookApiKey>
+        {
+            new("footlook-dev-key", IsAdmin: false, Label: "demo-default"),
+            new("footlook-dev-admin-key", IsAdmin: true, Label: "demo-default-admin"),
+        };
 });
 
 // TODO: Add MongoDB repository registration here if needed
@@ -106,17 +117,13 @@ app.UseFootLook();
 var footlookOptions = app.Services.GetRequiredService<FootLookOptions>();
 app.MapFootLookEndpoints(footlookOptions);
 
-app.MapPost("/pause", (CaptureEvents events) =>
-{
-    events.Pause();
-    return Results.Ok(new { Message = "FootLook paused" });
-});
-
-app.MapPost("/resume", (CaptureEvents events) =>
-{
-    events.Resume();
-    return Results.Ok(new { Message = "FootLook resumed" });
-});
+// Pause/resume live here: only the authenticated /footlook/captures/pause and
+// /footlook/captures/resume routes (mapped by MapFootLookEndpoints, admin key
+// required). This demo used to also expose unauthenticated top-level /pause and
+// /resume routes wired to CaptureEvents.Pause/Resume - a second, weaker "pause"
+// that only silenced the console log subscriber below without actually stopping
+// capture, sinks, or the live feed. That duplicate control surface is removed:
+// it bypassed the auth just added and did not do what its name implied.
 
 app.MapGet("/", () =>
 {

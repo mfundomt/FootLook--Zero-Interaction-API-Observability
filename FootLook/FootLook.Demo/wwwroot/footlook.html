@@ -1297,6 +1297,70 @@
             var observedTabWindow = null;
             var observedTabMonitor = null;
 
+            var API_KEY_HEADER = 'X-FootLook-Api-Key';
+            var API_KEY_QUERY_PARAM = 'footlook_api_key';
+            var API_KEY_STORAGE_KEY = 'footlook_api_key';
+
+            function getStoredApiKey() {
+                try {
+                    return localStorage.getItem(API_KEY_STORAGE_KEY) || '';
+                } catch (err) {
+                    // Private browsing / blocked storage - fall back to in-memory only.
+                    return getStoredApiKey._fallback || '';
+                }
+            }
+
+            function setStoredApiKey(key) {
+                try {
+                    localStorage.setItem(API_KEY_STORAGE_KEY, key);
+                } catch (err) {
+                    getStoredApiKey._fallback = key;
+                }
+            }
+
+            function promptForApiKey(message) {
+                var key = window.prompt(message || 'Enter your FootLook API key:', getStoredApiKey() || '');
+                if (key) {
+                    setStoredApiKey(key.trim());
+                }
+                return getStoredApiKey();
+            }
+
+            // Every FootLook REST call must go through this instead of the raw fetch API so
+            // the configured key is always attached, and a 401 (missing/invalid key) or 403
+            // (non-admin key on an admin-only route) surfaces as a re-prompt instead of a
+            // silently broken dashboard.
+            async function footlookFetch(url, options) {
+                options = options || {};
+                var headers = Object.assign({}, options.headers || {});
+                var key = getStoredApiKey();
+                if (key) {
+                    headers[API_KEY_HEADER] = key;
+                }
+
+                var response = await fetch(url, Object.assign({}, options, { headers: headers }));
+
+                if (response.status === 401) {
+                    promptForApiKey('FootLook API key missing or invalid. Enter a valid key:');
+                    var retryKey = getStoredApiKey();
+                    if (retryKey) {
+                        headers[API_KEY_HEADER] = retryKey;
+                        response = await fetch(url, Object.assign({}, options, { headers: headers }));
+                    }
+                } else if (response.status === 403) {
+                    toast('That action needs an admin FootLook API key.');
+                }
+
+                return response;
+            }
+
+            function withApiKeyQuery(url) {
+                var key = getStoredApiKey();
+                if (!key) return url;
+                var separator = url.indexOf('?') === -1 ? '?' : '&';
+                return url + separator + API_KEY_QUERY_PARAM + '=' + encodeURIComponent(key);
+            }
+
             function statusClass(s) { return Math.floor(s / 100) + 'xx'; }
             function fmtTime(ts) {
                 var d = new Date(ts);
@@ -1514,7 +1578,7 @@
                 params.set('tabId', String(tabId));
                 if (siteUrl) params.set('siteUrl', String(siteUrl));
 
-                fetch('/footlook/outcomes/session/start?' + params.toString(), {
+                footlookFetch('/footlook/outcomes/session/start?' + params.toString(), {
                     method: 'POST'
                 }).catch(function () { });
             }
@@ -1525,7 +1589,7 @@
                 var params = new URLSearchParams();
                 params.set('sessionId', String(sessionId));
 
-                fetch('/footlook/outcomes/session/end?' + params.toString(), {
+                footlookFetch('/footlook/outcomes/session/end?' + params.toString(), {
                     method: 'POST'
                 }).catch(function () { });
             }
@@ -2050,9 +2114,9 @@
 
             async function loadRecent(page) {
                 state.page = Math.max(1, page);
-                var response = await fetch(buildCapturesUrl(state.page));
+                var response = await footlookFetch(buildCapturesUrl(state.page));
                 if (!response.ok) {
-                    response = await fetch(buildLegacyCapturesUrl(state.page));
+                    response = await footlookFetch(buildLegacyCapturesUrl(state.page));
                 }
                 if (!response.ok) throw new Error('Failed to load captures. Status ' + response.status);
 
@@ -2089,7 +2153,7 @@
                     return;
                 }
 
-                var response = await fetch('/footlook/captures/stats');
+                var response = await footlookFetch('/footlook/captures/stats');
                 if (!response.ok) throw new Error('Failed to load stats. Status ' + response.status);
                 state.stats = await response.json();
                 renderKPIs();
@@ -2182,7 +2246,7 @@
                         return;
                     }
 
-                    var response = await fetch('/footlook/captures', { method: 'DELETE' });
+                    var response = await footlookFetch('/footlook/captures', { method: 'DELETE' });
                     if (!response.ok) {
                         toast('Failed to clear captures');
                         return;
@@ -2262,7 +2326,7 @@
 
             async function wireLiveStream() {
                 connection = new signalR.HubConnectionBuilder()
-                    .withUrl('/footlook/live')
+                    .withUrl(withApiKeyQuery('/footlook/live'))
                     .withAutomaticReconnect()
                     .build();
 
@@ -2291,6 +2355,10 @@
 
             async function init() {
                 try {
+                    if (!getStoredApiKey()) {
+                        promptForApiKey('Enter your FootLook API key (demo default: footlook-dev-key):');
+                    }
+
                     applySiteConnectorVisibility();
                     cacheEls();
                     wireEvents();
@@ -2322,7 +2390,7 @@
 
                 async function syncButtonFromServerStatus() {
                     try {
-                        const response = await fetch('/footlook/captures/status', { method: 'GET' });
+                        const response = await footlookFetch('/footlook/captures/status', { method: 'GET' });
                         if (!response.ok) return;
 
                         const data = await response.json();
@@ -2344,7 +2412,7 @@
                     const endpoint = isPaused ? '/footlook/resume' : '/footlook/pause';
 
                     try {
-                        const response = await fetch(endpoint, { method: 'POST' });
+                        const response = await footlookFetch(endpoint, { method: 'POST' });
                         if (!response.ok) return;
 
                         isPaused = !isPaused;
