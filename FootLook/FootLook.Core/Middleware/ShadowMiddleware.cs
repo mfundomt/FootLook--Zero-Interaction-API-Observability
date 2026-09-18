@@ -323,21 +323,88 @@ namespace FootLook.Core.Middleware
                 catch (Exception ex)
                 {
                     capturedException = ex;
-                    context.Response.StatusCode = 500;
-                    _logger.LogError(ex, "FootLook captured failure for {Method} {Path}", context.Request.Method, context.Request.Path);
                 }
 
                 stopwatch.Stop();
 
-                //if (_options.CaptureResponseBody && ShouldCaptureContentType(context.Response.ContentType))
-                //{
-                //    responseBodyCopy.Position = 0;
+                if (capturedException is not null)
+                {
+                    // The downstream pipeline threw. FootLook must not touch the response at
+                    // all here: forcing StatusCode=500 and copying whatever partial bytes
+                    // landed in responseBodyCopy pre-empts the host's own exception handling
+                    // (UseExceptionHandler, a dev exception page, a custom filter) further up
+                    // the pipeline, which may still run and needs to own the response. We only
+                    // record what we observed and rethrow immediately so the real handler runs
+                    // exactly as it would if FootLook were not installed.
+                    _logger.LogError(capturedException, "FootLook captured failure for {Method} {Path}", context.Request.Method, context.Request.Path);
 
-                //    responseBody = await new StreamReader(responseBodyCopy)
-                //        .ReadToEndAsync();
+                    var failureHeaders = CaptureHeaders(context, out var failureMaskedHeaderCount);
+                    var failureMaskedPath = MaskPathAndQuery(context, out var failureMaskedQueryParameterCount);
+                    var failureMaskedRequestBodyFieldCount = 0;
+                    var failureMaskedRequestBody = requestBodyCaptured
+                        ? TrimBody(MaskSensitiveBodyFields(requestBody, out failureMaskedRequestBodyFieldCount))
+                        : null;
+                    var failureClientIp = MaskClientIp(context.Connection.RemoteIpAddress?.ToString(), out var failureClientIpAnonymized);
+                    var failureUserAgent = MaskUserAgent(context.Request.Headers.UserAgent.ToString(), out var failureUserAgentAnonymized);
 
-                //    responseBodyCopy.Position = 0;
-                //}
+                    var failureCapturedRequest = new CapturedRequest
+                    {
+                        Headers = failureHeaders,
+                        Method = context.Request.Method,
+                        Path = failureMaskedPath,
+                        RequestBody = failureMaskedRequestBody,
+                        ResponseBody = null,
+                        // Recorded for observability only - the client's actual status is
+                        // whatever the host's real exception handler decides, since we never
+                        // write to context.Response here.
+                        StatusCode = 500,
+                        RequestContentType = context.Request.ContentType,
+                        RequestSizeBytes = context.Request.ContentLength ?? (string.IsNullOrEmpty(requestBody) ? 0 : Encoding.UTF8.GetByteCount(requestBody)),
+                        ResponseContentType = null,
+                        ResponseSizeBytes = 0,
+                        DurationMs = stopwatch.ElapsedMilliseconds,
+                        Exception = capturedException.Message,
+                        CorrelationId = correlationId,
+                        TraceId = traceId,
+                        SpanId = spanId,
+                        ParentSpanId = parentSpanId,
+                        TraceParent = traceParent ?? string.Empty,
+                        TraceState = traceState ?? string.Empty,
+                        Baggage = baggage ?? string.Empty,
+                        ServiceName = _options.ServiceName,
+                        EnvironmentName = _options.EnvironmentName,
+                        RequestBodyCaptured = requestBodyCaptured,
+                        ResponseBodyCaptured = false,
+                        RequestBodySkippedReason = requestBodySkippedReason,
+                        ResponseBodySkippedReason = "Endpoint threw before a response body was produced",
+                        ClientIp = failureClientIp,
+                        UserAgent = failureUserAgent,
+                    };
+
+                    await _queue.EnqueueAsync(failureCapturedRequest);
+
+                    if (_options.EnablePrivacyAudit && _options.EnablePiiMasking)
+                    {
+                        var failureTotalMasks = failureMaskedHeaderCount + failureMaskedQueryParameterCount + failureMaskedRequestBodyFieldCount;
+                        if (failureTotalMasks > 0)
+                        {
+                            _privacyAuditStore.Add(new PrivacyAuditEntry(
+                                TimestampUtc: DateTime.UtcNow,
+                                Method: context.Request.Method,
+                                Path: context.Request.Path,
+                                CorrelationId: correlationId,
+                                MaskedHeaders: failureMaskedHeaderCount,
+                                MaskedQueryParameters: failureMaskedQueryParameterCount,
+                                MaskedRequestBodyFields: failureMaskedRequestBodyFieldCount,
+                                MaskedResponseBodyFields: 0,
+                                ClientIpAnonymized: failureClientIpAnonymized,
+                                UserAgentAnonymized: failureUserAgentAnonymized,
+                                RedactionValue: GetRedactionValue()), _options.PrivacyAuditMaxEntries);
+                        }
+                    }
+
+                    throw capturedException;
+                }
 
                 bool responseBodyCaptured = false;
                 string? responseBodySkippedReason = null;
@@ -392,7 +459,7 @@ namespace FootLook.Core.Middleware
                     ResponseContentType = context.Response.ContentType,
                     ResponseSizeBytes = context.Response.ContentLength ?? (string.IsNullOrEmpty(responseBody) ? 0 : Encoding.UTF8.GetByteCount(responseBody)),
                     DurationMs = stopwatch.ElapsedMilliseconds,
-                    Exception = capturedException?.Message,
+                    Exception = null,
                     CorrelationId = correlationId,
                     TraceId = traceId,
                     SpanId = spanId,
@@ -437,11 +504,6 @@ namespace FootLook.Core.Middleware
                     context.Request.Path,
                     context.Response.StatusCode,
                     stopwatch.ElapsedMilliseconds);
-
-                if (capturedException is not null)
-                {
-                    throw capturedException;
-                }
             }
             finally
             {
