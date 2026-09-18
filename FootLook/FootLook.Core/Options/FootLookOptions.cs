@@ -78,33 +78,47 @@ namespace FootLook.Core.Options
         public bool UseMongoSink { get; set; } = false;
 
         /// <summary>
-        /// Header REST callers must send a configured key in: "{ApiKeyHeaderName}: {key}".
+        /// When true (the default), every /footlook/* endpoint except /health and
+        /// /auth/token requires a valid FootLook bearer token, obtained by exchanging one
+        /// of <see cref="ApiKeys"/> at POST {EndpointBasePath}/auth/token. This is on by
+        /// default because FootLook observes and can expose live production traffic - it
+        /// should not be reachable by anyone who can route to the host. Set to false only
+        /// for local/throwaway setups where the host is not reachable by anyone untrusted.
         /// </summary>
-        public string ApiKeyHeaderName { get; set; } = "X-FootLook-Api-Key";
+        public bool RequireAuthentication { get; set; } = true;
 
         /// <summary>
-        /// Query string parameter the live SignalR hub accepts a key on, since browsers
-        /// cannot attach custom headers to a WebSocket upgrade request. Example:
-        /// /footlook/live?footlook_api_key=... . Only used when RequireApiKey is true.
-        /// </summary>
-        public string ApiKeyQueryParameterName { get; set; } = "footlook_api_key";
-
-        /// <summary>
-        /// When true (the default), every /footlook/* endpoint except /health requires a
-        /// valid key from <see cref="ApiKeys"/>. This is on by default because FootLook
-        /// observes and can expose live production traffic - it should not be reachable by
-        /// anyone who can route to the host. Set to false only for local/throwaway setups
-        /// where the host is not reachable by anyone untrusted.
-        /// </summary>
-        public bool RequireApiKey { get; set; } = true;
-
-        /// <summary>
-        /// Keys callers may authenticate with. A key with IsAdmin=false can read/clear only
-        /// its own capture scope; IsAdmin=true is required for actions that affect every
-        /// caller at once (pause/resume capture, clearing the privacy audit log, self-heal,
-        /// setup profiles) since those are host-wide, not per-caller.
+        /// Login credentials exchangeable for a bearer token at {EndpointBasePath}/auth/token.
+        /// A credential with IsAdmin=false yields a token that can read/clear only its own
+        /// capture scope; IsAdmin=true is required for a token that can perform actions
+        /// affecting every caller at once (pause/resume capture, clearing the privacy audit
+        /// log, self-heal, setup profiles), since those are host-wide, not per-caller.
+        /// These credentials are only ever sent once, at login - never on every request.
         /// </summary>
         public List<FootLookApiKey> ApiKeys { get; set; } = new();
+
+        /// <summary>
+        /// Symmetric key (HMAC-SHA256) FootLook signs and validates bearer tokens with. If
+        /// left empty, a random key is generated for this process's lifetime - fine for a
+        /// single-instance/local setup, but tokens will stop validating across a restart and
+        /// won't validate across multiple instances behind a load balancer. Set this
+        /// explicitly (32+ bytes, from configuration/user-secrets/environment - never
+        /// hardcoded in source) for any production or multi-instance deployment.
+        /// </summary>
+        public string TokenSigningKey { get; set; } = string.Empty;
+
+        /// <summary>
+        /// How long an issued bearer token remains valid before the caller must log in
+        /// again via {EndpointBasePath}/auth/token.
+        /// </summary>
+        public double TokenLifetimeHours { get; set; } = 8;
+
+        /// <summary>
+        /// Query string parameter the live SignalR hub accepts a bearer token on, since
+        /// browsers cannot attach custom headers to a WebSocket upgrade request. Example:
+        /// /footlook/live?footlook_token=... . Only used when RequireAuthentication is true.
+        /// </summary>
+        public string TokenQueryParameterName { get; set; } = "footlook_token";
     }
 
 }
