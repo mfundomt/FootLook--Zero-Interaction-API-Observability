@@ -1297,82 +1297,139 @@
             var observedTabWindow = null;
             var observedTabMonitor = null;
 
-            var API_KEY_HEADER = 'X-FootLook-Api-Key';
-            var API_KEY_QUERY_PARAM = 'footlook_api_key';
-            var API_KEY_STORAGE_KEY = 'footlook_api_key';
+            var TOKEN_QUERY_PARAM = 'footlook_token';
+            var TOKEN_STORAGE_KEY = 'footlook_token';
+            var TOKEN_EXPIRY_STORAGE_KEY = 'footlook_token_expires';
+            var TOKEN_EXPIRY_SAFETY_MARGIN_MS = 5000;
 
-            function getStoredApiKey() {
+            var authStorageFallback = { token: '', expiresAtUtc: '' };
+
+            function getStoredToken() {
                 try {
-                    return localStorage.getItem(API_KEY_STORAGE_KEY) || '';
+                    return localStorage.getItem(TOKEN_STORAGE_KEY) || '';
                 } catch (err) {
-                    // Private browsing / blocked storage - fall back to in-memory only.
-                    return getStoredApiKey._fallback || '';
+                    return authStorageFallback.token;
                 }
             }
 
-            function setStoredApiKey(key) {
+            function getStoredTokenExpiry() {
                 try {
-                    localStorage.setItem(API_KEY_STORAGE_KEY, key);
+                    return localStorage.getItem(TOKEN_EXPIRY_STORAGE_KEY) || '';
                 } catch (err) {
-                    getStoredApiKey._fallback = key;
+                    return authStorageFallback.expiresAtUtc;
                 }
             }
 
-            function promptForApiKey(message, failedKey) {
-                // Two independent code paths call footlookFetch on first load (init's
-                // refreshAll and the pause/resume button's immediate status check), and
-                // both can hit 401 around the same time. window.prompt blocks the whole
-                // page, so only one dialog can actually be showing at once - but without
-                // this check, whichever call was queued behind the first one still pops
-                // its OWN second dialog right after, even though a valid key was just
-                // stored a moment earlier. Only skip prompting when the stored key has
-                // actually changed since the attempt that got us here failed - if it's
-                // still the same (genuinely wrong) key, we still need to ask.
-                var existing = getStoredApiKey();
-                if (existing && existing !== failedKey) {
-                    return existing;
+            function setStoredToken(token, expiresAtUtc) {
+                try {
+                    localStorage.setItem(TOKEN_STORAGE_KEY, token);
+                    localStorage.setItem(TOKEN_EXPIRY_STORAGE_KEY, expiresAtUtc || '');
+                } catch (err) {
+                    authStorageFallback = { token: token, expiresAtUtc: expiresAtUtc || '' };
+                }
+            }
+
+            function clearStoredToken() {
+                try {
+                    localStorage.removeItem(TOKEN_STORAGE_KEY);
+                    localStorage.removeItem(TOKEN_EXPIRY_STORAGE_KEY);
+                } catch (err) {
+                    authStorageFallback = { token: '', expiresAtUtc: '' };
+                }
+            }
+
+            function isStoredTokenUsable() {
+                var token = getStoredToken();
+                if (!token) return false;
+
+                var expiresAt = new Date(getStoredTokenExpiry()).getTime();
+                return Number.isFinite(expiresAt) && Date.now() < (expiresAt - TOKEN_EXPIRY_SAFETY_MARGIN_MS);
+            }
+
+            // Two independent code paths call footlookFetch on first load (init's
+            // refreshAll and the pause/resume button's immediate status check), and both
+            // can need a token around the same time. Rather than each opening its own
+            // window.prompt + login request, every caller awaits this SAME in-flight
+            // promise, so only one login round-trip (and one dialog) ever happens.
+            var authInFlight = null;
+
+            async function ensureAuthenticated(forceReAuth) {
+                if (!forceReAuth && isStoredTokenUsable()) {
+                    return getStoredToken();
                 }
 
-                var key = window.prompt(message || 'Enter your FootLook API key:', '');
-                if (key) {
-                    setStoredApiKey(key.trim());
+                if (authInFlight) {
+                    return authInFlight;
                 }
-                return getStoredApiKey();
+
+                authInFlight = (async function () {
+                    try {
+                        var apiKey = window.prompt(
+                            'Sign in to FootLook\n\nEnter your API key (demo default: footlook-dev-key):',
+                            '');
+
+                        if (!apiKey) {
+                            return '';
+                        }
+
+                        var response = await fetch('/footlook/auth/token', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ apiKey: apiKey.trim() })
+                        });
+
+                        if (!response.ok) {
+                            toast('Sign-in failed: invalid API key.');
+                            clearStoredToken();
+                            return '';
+                        }
+
+                        var data = await response.json();
+                        var token = data.token || data.Token;
+                        var expiresAtUtc = data.expiresAtUtc || data.ExpiresAtUtc;
+                        setStoredToken(token, expiresAtUtc);
+                        return token;
+                    } finally {
+                        authInFlight = null;
+                    }
+                })();
+
+                return authInFlight;
             }
 
             // Every FootLook REST call must go through this instead of the raw fetch API so
-            // the configured key is always attached, and a 401 (missing/invalid key) or 403
-            // (non-admin key on an admin-only route) surfaces as a re-prompt instead of a
-            // silently broken dashboard.
+            // a valid bearer token is always attached (logging in first if needed), and a
+            // 401 (missing/expired token) triggers a fresh sign-in instead of a silently
+            // broken dashboard. A 403 means the signed-in token isn't admin-flagged.
             async function footlookFetch(url, options) {
                 options = options || {};
                 var headers = Object.assign({}, options.headers || {});
-                var key = getStoredApiKey();
-                if (key) {
-                    headers[API_KEY_HEADER] = key;
+                var token = await ensureAuthenticated(false);
+                if (token) {
+                    headers['Authorization'] = 'Bearer ' + token;
                 }
 
                 var response = await fetch(url, Object.assign({}, options, { headers: headers }));
 
                 if (response.status === 401) {
-                    promptForApiKey('FootLook API key missing or invalid. Enter a valid key:', key);
-                    var retryKey = getStoredApiKey();
-                    if (retryKey) {
-                        headers[API_KEY_HEADER] = retryKey;
+                    clearStoredToken();
+                    var newToken = await ensureAuthenticated(true);
+                    if (newToken) {
+                        headers['Authorization'] = 'Bearer ' + newToken;
                         response = await fetch(url, Object.assign({}, options, { headers: headers }));
                     }
                 } else if (response.status === 403) {
-                    toast('That action needs an admin FootLook API key.');
+                    toast('That action needs an admin FootLook account.');
                 }
 
                 return response;
             }
 
-            function withApiKeyQuery(url) {
-                var key = getStoredApiKey();
-                if (!key) return url;
+            function withTokenQuery(url) {
+                var token = getStoredToken();
+                if (!token) return url;
                 var separator = url.indexOf('?') === -1 ? '?' : '&';
-                return url + separator + API_KEY_QUERY_PARAM + '=' + encodeURIComponent(key);
+                return url + separator + TOKEN_QUERY_PARAM + '=' + encodeURIComponent(token);
             }
 
             function statusClass(s) { return Math.floor(s / 100) + 'xx'; }
@@ -2339,8 +2396,10 @@
             }
 
             async function wireLiveStream() {
+                await ensureAuthenticated(false);
+
                 connection = new signalR.HubConnectionBuilder()
-                    .withUrl(withApiKeyQuery('/footlook/live'))
+                    .withUrl(withTokenQuery('/footlook/live'))
                     .withAutomaticReconnect()
                     .build();
 
@@ -2369,9 +2428,7 @@
 
             async function init() {
                 try {
-                    if (!getStoredApiKey()) {
-                        promptForApiKey('Enter your FootLook API key (demo default: footlook-dev-key):');
-                    }
+                    await ensureAuthenticated(false);
 
                     applySiteConnectorVisibility();
                     cacheEls();

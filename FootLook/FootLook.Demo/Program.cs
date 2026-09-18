@@ -10,8 +10,25 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-;
+builder.Services.AddSwaggerGen(swagger =>
+{
+    // Lets Swagger UI's Authorize button drive FootLook's own bearer-token auth: paste
+    // the token from POST /footlook/auth/token and every "Try it out" call on a
+    // FootLook endpoint carries it automatically.
+    swagger.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Description = "FootLook bearer token, obtained from POST /footlook/auth/token."
+    });
+    // Applied per-operation (not globally) so /footlook/health and /footlook/auth/token -
+    // the two routes that are genuinely unauthenticated - don't show a misleading padlock
+    // in the UI for a requirement that was never actually enforced on them.
+    swagger.OperationFilter<FootLookSwaggerSecurityFilter>();
+});
 builder.Services.AddHttpContextAccessor();
 //Register SignalR for real-time updates
 builder.Services.AddSignalR();
@@ -64,9 +81,10 @@ builder.Services.AddFootLook(options =>
     }
 //  options.AllowedMethods.Add("DELETE");
 
-    // Dev-only default keys so the bundled demo/dashboard works out of the box.
-    // A real deployment should set FootLook:ApiKeys via configuration/user-secrets/
-    // environment variables instead of hardcoding keys in source.
+    // Dev-only default login credentials so the bundled demo/dashboard works out of
+    // the box - exchange one at POST /footlook/auth/token for a bearer token. A real
+    // deployment should set FootLook:ApiKeys via configuration/user-secrets/
+    // environment variables instead of hardcoding credentials in source.
     var configuredKeys = builder.Configuration.GetSection("FootLook:ApiKeys").Get<List<FootLookApiKey>>();
     options.ApiKeys = configuredKeys is { Count: > 0 }
         ? configuredKeys
@@ -150,7 +168,8 @@ app.MapGet("/error", () =>
    throw new Exception("simulated failure");
 });
 
-app.MapHub<CaptureHub>("/footlook/live");
+// The /footlook/live hub is mapped inside MapFootLookEndpoints (above) so its
+// authentication requirement can never drift from the REST endpoints' own.
 
 //app.MapGet("/mongo-test",
 //    async (ICaptureRepository repository) =>
@@ -178,5 +197,56 @@ app.Run();
 public class TestRequest
 {
     public string Message { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Marks Swagger operations as requiring the Bearer scheme, but only the ones FootLook
+/// itself actually protects (paths under /footlook, minus the two genuinely
+/// unauthenticated routes) - this demo's own business endpoints (/, /test2, /slow,
+/// /error) were never behind FootLook's auth and must not show a padlock either, or the
+/// Swagger doc would claim a requirement that isn't real in either direction.
+/// </summary>
+public class FootLookSwaggerSecurityFilter : Swashbuckle.AspNetCore.SwaggerGen.IOperationFilter
+{
+    private const string ProtectedPrefix = "footlook/";
+
+    private static readonly string[] ExemptRelativePaths =
+    {
+        "footlook/health",
+        "footlook/auth/token"
+    };
+
+    public void Apply(Microsoft.OpenApi.Models.OpenApiOperation operation, Swashbuckle.AspNetCore.SwaggerGen.OperationFilterContext context)
+    {
+        var relativePath = context.ApiDescription.RelativePath?.TrimEnd('/') ?? string.Empty;
+
+        if (!relativePath.StartsWith(ProtectedPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (ExemptRelativePaths.Any(exempt => relativePath.Equals(exempt, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        operation.Security = new List<Microsoft.OpenApi.Models.OpenApiSecurityRequirement>
+        {
+            new()
+            {
+                {
+                    new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+                    {
+                        Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                        {
+                            Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                            Id = "Bearer"
+                        }
+                    },
+                    Array.Empty<string>()
+                }
+            }
+        };
+    }
 }
 

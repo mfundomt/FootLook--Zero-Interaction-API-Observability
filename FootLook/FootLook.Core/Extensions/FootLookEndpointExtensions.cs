@@ -6,6 +6,7 @@ using FootLook.Core.Options;
 using FootLook.Core.Models;
 using FootLook.Core.Services;
 using FootLook.Core.Security;
+using FootLook.Core.Hubs;
 
 namespace FootLook.Core.Extensions
 {
@@ -45,7 +46,7 @@ namespace FootLook.Core.Extensions
             var prefix = options.EndpointBasePath.TrimEnd('/');
 
             // /health is intentionally unauthenticated - it exposes no capture data, only
-            // that the subsystem is up, so basic liveness checks don't need a key.
+            // that the subsystem is up, so basic liveness checks don't need a token.
             endpoints.MapGet($"{prefix}/health", (
                 FootLookOptions options,
                 IShadowSink sink) =>
@@ -61,15 +62,38 @@ namespace FootLook.Core.Extensions
                 });
             });
 
-            // Everything else requires a valid API key. Reads/writes that only affect the
-            // caller's own capture scope live in `group`; actions that affect every caller
-            // at once (pause/resume, privacy-audit clear, self-heal/setup) live in
-            // `adminGroup` and additionally require an admin-flagged key.
-            var group = endpoints.MapGroup(prefix)
-                .AddEndpointFilter(new FootLookApiKeyEndpointFilter(options, requireAdmin: false));
+            // The only route that ever sees a raw API key - exchanges it for a short-lived
+            // bearer token. Also unauthenticated by definition: you can't require a token to
+            // obtain a token.
+            endpoints.MapPost($"{prefix}/auth/token", (FootLookOptions options, FootLookTokenService tokenService, FootLookLoginRequest? request) =>
+            {
+                if (!options.RequireAuthentication)
+                {
+                    return Results.BadRequest(new { message = "Authentication is disabled on this FootLook instance (RequireAuthentication=false)." });
+                }
 
-            var adminGroup = endpoints.MapGroup(prefix)
-                .AddEndpointFilter(new FootLookApiKeyEndpointFilter(options, requireAdmin: true));
+                var matched = FootLookApiKeyMatcher.Match(options, request?.ApiKey);
+                if (matched is null)
+                {
+                    return Results.Json(new { message = "Invalid API key." }, statusCode: StatusCodes.Status401Unauthorized);
+                }
+
+                var (token, expiresAtUtc) = tokenService.IssueToken(matched);
+                return Results.Ok(new { token, expiresAtUtc, isAdmin = matched.IsAdmin });
+            });
+
+            // Everything else requires a valid bearer token (obtained above). Reads/writes
+            // that only affect the caller's own capture scope live in `group`; actions that
+            // affect every caller at once (pause/resume, privacy-audit clear, self-heal/
+            // setup) live in `adminGroup` and additionally require an admin-flagged token.
+            var group = endpoints.MapGroup(prefix);
+            var adminGroup = endpoints.MapGroup(prefix);
+
+            if (options.RequireAuthentication)
+            {
+                group.RequireAuthorization(FootLookAuthDefaults.UserPolicy);
+                adminGroup.RequireAuthorization(FootLookAuthDefaults.AdminPolicy);
+            }
 
             group.MapGet("/dashboard/ops", (FootLookOptions options, CaptureReliabilityState reliabilityState, PrivacyAuditStore privacyAuditStore) =>
             {
@@ -613,6 +637,15 @@ namespace FootLook.Core.Extensions
                     metrics = health.Metrics
                 });
             });
+
+            // Mapped here rather than left to the host so its auth requirement can never
+            // drift from the REST endpoints above - previously the demo mapped this itself
+            // with a hardcoded path that happened to match EndpointBasePath by coincidence.
+            var hubBuilder = endpoints.MapHub<CaptureHub>($"{prefix}/live");
+            if (options.RequireAuthentication)
+            {
+                hubBuilder.RequireAuthorization(FootLookAuthDefaults.UserPolicy);
+            }
 
             return endpoints;
         }
