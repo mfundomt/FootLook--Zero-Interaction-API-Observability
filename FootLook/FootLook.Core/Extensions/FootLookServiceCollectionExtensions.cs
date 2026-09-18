@@ -51,7 +51,11 @@ namespace FootLook.Core.Extensions
                    provide.GetRequiredService<InMemorySink>()
                 };
 
-                return new CompositeSink(sinks);
+                return new CompositeSink(
+                    sinks,
+                    provide.GetRequiredService<FootLookOptions>(),
+                    provide.GetRequiredService<CaptureReliabilityState>(),
+                    provide.GetRequiredService<Microsoft.Extensions.Logging.ILogger<CompositeSink>>());
             });
             // Register the ShadowBackgroundWorker as a hosted service, which will run in the background and process captured requests from the queue.
             services.AddHostedService<ShadowBackgroundWorker>();

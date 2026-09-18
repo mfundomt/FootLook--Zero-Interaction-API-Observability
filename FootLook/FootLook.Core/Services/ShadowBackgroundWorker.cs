@@ -58,9 +58,20 @@ namespace FootLook.Core.Services
 
                         _logger.LogInformation("Processing captured request: {Method} {Path}", capturedRequest.Method, capturedRequest.Path);
 
-                        var persisted = await TryWriteWithRetryAsync(capturedRequest, stoppingToken);
-                        if (!persisted)
+                        // The sink (CompositeSink in the default registration) retries each
+                        // of its own sinks individually and only throws here when every sink
+                        // failed to persist this capture - a partial failure is recorded by
+                        // the sink itself and still lets the capture through.
+                        try
                         {
+                            await _sink.WriteAsync(capturedRequest);
+                        }
+                        catch (Exception persistEx)
+                        {
+                            _reliabilityState.RecordPersistFailure(persistEx.Message);
+                            _logger.LogError(persistEx,
+                                "FootLook failed to persist capture {Id} to any sink; skipping event/broadcast for it.",
+                                capturedRequest.Id);
                             continue;
                         }
 
@@ -193,45 +204,6 @@ namespace FootLook.Core.Services
 
                 value = item.Value;
                 return true;
-            }
-
-            return false;
-        }
-
-        private async Task<bool> TryWriteWithRetryAsync(CapturedRequest request, CancellationToken cancellationToken)
-        {
-            var retryCount = Math.Max(0, _options.SinkWriteRetryCount);
-            var baseDelayMs = Math.Max(10, _options.SinkWriteRetryDelayMs);
-
-            for (var attempt = 0; attempt <= retryCount; attempt++)
-            {
-                try
-                {
-                    await _sink.WriteAsync(request);
-                    return true;
-                }
-                catch (Exception ex) when (attempt < retryCount)
-                {
-                    var attemptNo = attempt + 1;
-                    _reliabilityState.RecordRetry(attemptNo, ex.Message);
-                    _logger.LogWarning(ex,
-                        "FootLook sink write failed for capture {Id}. Retry {Attempt}/{MaxAttempts}.",
-                        request.Id,
-                        attemptNo,
-                        retryCount);
-
-                    var backoff = baseDelayMs * (int)Math.Pow(2, attempt);
-                    await Task.Delay(backoff, cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    _reliabilityState.RecordPersistFailure(ex.Message);
-                    _logger.LogError(ex,
-                        "FootLook sink write failed permanently for capture {Id} after {Attempts} attempts.",
-                        request.Id,
-                        retryCount + 1);
-                    return false;
-                }
             }
 
             return false;
