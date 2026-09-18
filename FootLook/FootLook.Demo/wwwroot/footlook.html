@@ -1318,8 +1318,22 @@
                 }
             }
 
-            function promptForApiKey(message) {
-                var key = window.prompt(message || 'Enter your FootLook API key:', getStoredApiKey() || '');
+            function promptForApiKey(message, failedKey) {
+                // Two independent code paths call footlookFetch on first load (init's
+                // refreshAll and the pause/resume button's immediate status check), and
+                // both can hit 401 around the same time. window.prompt blocks the whole
+                // page, so only one dialog can actually be showing at once - but without
+                // this check, whichever call was queued behind the first one still pops
+                // its OWN second dialog right after, even though a valid key was just
+                // stored a moment earlier. Only skip prompting when the stored key has
+                // actually changed since the attempt that got us here failed - if it's
+                // still the same (genuinely wrong) key, we still need to ask.
+                var existing = getStoredApiKey();
+                if (existing && existing !== failedKey) {
+                    return existing;
+                }
+
+                var key = window.prompt(message || 'Enter your FootLook API key:', '');
                 if (key) {
                     setStoredApiKey(key.trim());
                 }
@@ -1341,7 +1355,7 @@
                 var response = await fetch(url, Object.assign({}, options, { headers: headers }));
 
                 if (response.status === 401) {
-                    promptForApiKey('FootLook API key missing or invalid. Enter a valid key:');
+                    promptForApiKey('FootLook API key missing or invalid. Enter a valid key:', key);
                     var retryKey = getStoredApiKey();
                     if (retryKey) {
                         headers[API_KEY_HEADER] = retryKey;
