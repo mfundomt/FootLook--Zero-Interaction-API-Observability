@@ -47,8 +47,17 @@ Legend: `[x]` done and merged into `staging` · `[ ]` not started · `[~]` parti
   `/footlool/pause` typo route were removed as part of the auth work.
   `CaptureRuntimeState` is now the only pause mechanism. *Not separately
   verified as its own item — worth a quick confirmation pass, not a new fix.*
-- [ ] **CORS is dead config** — `AllowedMethods` collected but `app.UseCors()`
-  never called. **Needs your decision on allowed origins before implementing.**
+- [x] **CORS "dead config"** — turned out to be a misreading, not a real gap:
+  there is no CORS middleware, policy, or `app.UseCors()` anywhere in the
+  codebase to be "half-wired." The finding was based on a wrong comment
+  sitting above `FootLookOptions.AllowedMethods`, which is a real, fully
+  functional, unrelated option (filters which HTTP methods FootLook
+  *captures*, via `ShadowMiddleware.ShouldCaptureMethod`). Decision: same-
+  origin only, no CORS needed (the dashboard is served from the same host as
+  the API). Fixed the misleading comment/docs in `Program.cs` and
+  `README.NuGet.md` instead of "removing" config that was never actually
+  CORS-related.
+  Branch: `fix/mislabeled-cors-comment`
 - [ ] **No durability** — in-memory-only queue, no crash recovery, queue-level
   drops (`DropOldest`) not even counted. **Needs a direction-setting
   conversation** (durable queue? accept the tradeoff and just add drop
@@ -101,10 +110,9 @@ Legend: `[x]` done and merged into `staging` · `[ ]` not started · `[~]` parti
 
 ## What's next (in order)
 
-1. **CORS decision** — needs your input on allowed origins.
-2. **Durability/scaling conversation** — needs your input on deployment target
+1. **Durability/scaling conversation** — needs your input on deployment target
    (single instance vs. multi-instance) before any code.
-3. Remaining High-bucket items that don't need a product decision: unbounded
+2. Remaining High-bucket items that don't need a product decision: unbounded
    body buffering/streaming, dashboard debouncing, field-aware PII masking.
-4. Medium bucket.
-5. Low/cleanup bundle — small enough to batch into one pass at the end.
+3. Medium bucket.
+4. Low/cleanup bundle — small enough to batch into one pass at the end.

@@ -61,7 +61,9 @@ builder.Services.AddFootLook(options =>
     options.IgnoredPaths.Add("/favicon.ico");
     options.IgnoredPaths.Add("/.well-known");
 
-    // Allow CORS for the FootLook endpoints
+    // HTTP methods FootLook will capture on the host's OWN endpoints (this has nothing
+    // to do with CORS - it's consumed by ShadowMiddleware.ShouldCaptureMethod to decide
+    // which requests get observed at all). DELETE is deliberately excluded below.
     options.AllowedMethods.Add("GET");
     options.AllowedMethods.Add("POST");
     options.AllowedMethods.Add("PATCH");
