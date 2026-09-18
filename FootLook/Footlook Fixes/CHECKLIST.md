@@ -77,9 +77,27 @@ Legend: `[x]` done and merged into `staging` · `[ ]` not started · `[~]` parti
   silently implying otherwise. The cheap, isolated durability win (queue-drop
   visibility, above) was done; the expensive one (external store, cross-
   instance dedupe, SignalR backplane) was deliberately not attempted here.
-- [ ] **Unbounded body buffering / no streaming support** — bodies fully read
-  into memory before `MaxBodyLength` truncation applies; SSE/large downloads
-  get fully buffered instead of streamed through.
+- [x] **Unbounded body buffering / no streaming support** — turned out to be
+  bigger than the one-line finding suggested: FootLook fully buffered *every*
+  response in memory before the client received a single byte, regardless of
+  size or content type (SSE, chunked, large downloads all silently broke).
+  Replaced the buffer-then-copy-at-the-end `MemoryStream` with
+  `CappedTeeStream`, which streams every write straight to the client
+  immediately while mirroring at most `MaxBodyLength` bytes into a bounded
+  side-buffer for capture. Also fixed the request-body side: reads are now
+  capped at `MaxBodyLength` characters during the read itself instead of
+  reading the whole body then truncating the resulting string. A real bug
+  surfaced and was fixed during testing: the initial truncation-detection
+  approach (`StreamReader.EndOfStream`) does a synchronous read under the
+  hood, which Kestrel disallows by default and crashed with 500 on any body
+  that hit the cap - replaced with a one-char async probe read.
+  Verified: TTFB on a 5-chunk streamed response is ~3ms vs ~2.5s total (was
+  previously indistinguishable from total time); a 2MB response is delivered
+  to the client in full while the capture is correctly truncated to exactly
+  `MaxBodyLength` bytes + marker; a 2MB POST body no longer crashes and is
+  captured truncated the same way; masking, exception-path capture, and
+  normal traffic all still work.
+  Branch: `fix/streaming-and-bounded-body-buffering`
 - [ ] **Dashboard fan-out entirely client-side, no debouncing** — every live
   event triggers a full REST re-fetch + full table re-render; will choke at
   real production volume. (Scope-based SignalR groups already cut the blast

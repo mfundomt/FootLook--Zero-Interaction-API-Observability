@@ -170,6 +170,34 @@ app.MapGet("/error", () =>
    throw new Exception("simulated failure");
 });
 
+// Exercises FootLook's response-body truncation: returns well over MaxBodyLength
+// (1MB configured above) so captures should show a truncated body with the
+// "...(truncated)" marker instead of buffering the whole thing unbounded.
+app.MapGet("/large", () =>
+{
+    var chunk = new string('x', 1024); // 1KB
+    var body = string.Concat(Enumerable.Repeat(chunk, 2048)); // ~2MB
+    return Results.Text(body, "text/plain");
+});
+
+// Exercises true response streaming: writes five chunks with a real delay and an
+// explicit flush between each. Before the CappedTeeStream fix, FootLook buffered
+// the entire response until the handler finished, so a client would see nothing
+// until all ~2.5s had elapsed regardless of these flushes. After the fix, each
+// chunk should reach the client as it's written - verify with:
+//   curl -w "ttfb=%{time_starttransfer}s total=%{time_total}s\n" -o /dev/null -s http://localhost:5042/stream
+// ttfb should be near-instant; total should be ~2.5s.
+app.MapGet("/stream", async (HttpContext context) =>
+{
+    context.Response.ContentType = "text/plain";
+    for (var i = 0; i < 5; i++)
+    {
+        await context.Response.WriteAsync($"chunk {i}\n");
+        await context.Response.Body.FlushAsync();
+        await Task.Delay(500);
+    }
+});
+
 // The /footlook/live hub is mapped inside MapFootLookEndpoints (above) so its
 // authentication requirement can never drift from the REST endpoints' own.
 

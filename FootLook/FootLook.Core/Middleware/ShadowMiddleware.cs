@@ -286,6 +286,7 @@ namespace FootLook.Core.Middleware
             string requestBody = string.Empty;
 
             bool requestBodyCaptured = false;
+            bool requestTruncated = false;
             string? requestBodySkippedReason = null;
 
             if (!_options.CaptureRequestBody)
@@ -305,7 +306,35 @@ namespace FootLook.Core.Middleware
                     Encoding.UTF8,
                     leaveOpen: true);
 
-                requestBody = await reader.ReadToEndAsync();
+                // Read only up to MaxBodyLength characters instead of the whole body then
+                // truncating the resulting string afterward - a large upload (or an
+                // attacker sending an oversized body on purpose) previously meant an
+                // unbounded in-memory string regardless of how small MaxBodyLength was set.
+                var maxChars = Math.Max(0, _options.MaxBodyLength);
+                var readBuffer = new char[Math.Clamp(maxChars, 1, 65536)];
+                var bodyBuilder = new StringBuilder();
+                int charsRead;
+                while (bodyBuilder.Length < maxChars &&
+                       (charsRead = await reader.ReadAsync(readBuffer, 0, Math.Min(readBuffer.Length, maxChars - bodyBuilder.Length))) > 0)
+                {
+                    bodyBuilder.Append(readBuffer, 0, charsRead);
+                }
+
+                if (bodyBuilder.Length >= maxChars)
+                {
+                    // StreamReader.EndOfStream reads synchronously under the hood, which
+                    // Kestrel disallows on the request stream by default and throws
+                    // InvalidOperationException ("Synchronous operations are disallowed")
+                    // for any body that actually hits this cap. A one-char async probe read
+                    // detects "is there more data" without that trap; the probed character
+                    // itself is discarded, which is fine - it exists only to answer the
+                    // truncated/not-truncated question, not to be captured.
+                    var probeBuffer = new char[1];
+                    var probeRead = await reader.ReadAsync(probeBuffer, 0, 1);
+                    requestTruncated = probeRead > 0;
+                }
+
+                requestBody = bodyBuilder.ToString();
                 context.Request.Body.Position = 0;
 
                 requestBodyCaptured = true;
@@ -313,14 +342,19 @@ namespace FootLook.Core.Middleware
 
             var originalResponseBody = context.Response.Body;
 
-            await using var responseBodyCopy = new MemoryStream();
+            // Wraps originalResponseBody rather than buffering into a separate MemoryStream:
+            // every write reaches the client immediately (true streaming for SSE/chunked/
+            // large responses instead of the client waiting for the whole thing to finish),
+            // while a bounded side-buffer captures at most MaxBodyLength bytes for FootLook
+            // itself - see CappedTeeStream for why buffer-then-copy had to go.
+            var teeStream = new CappedTeeStream(originalResponseBody, _options.MaxBodyLength);
 
             Exception? capturedException = null;
             string responseBody = string.Empty;
 
             try
             {
-                context.Response.Body = responseBodyCopy;
+                context.Response.Body = teeStream;
 
                 try
                 {
@@ -336,22 +370,39 @@ namespace FootLook.Core.Middleware
                 if (capturedException is not null)
                 {
                     // The downstream pipeline threw. FootLook must not touch the response at
-                    // all here: forcing StatusCode=500 and copying whatever partial bytes
-                    // landed in responseBodyCopy pre-empts the host's own exception handling
-                    // (UseExceptionHandler, a dev exception page, a custom filter) further up
-                    // the pipeline, which may still run and needs to own the response. We only
-                    // record what we observed and rethrow immediately so the real handler runs
-                    // exactly as it would if FootLook were not installed.
+                    // all here: forcing StatusCode=500 would pre-empt the host's own
+                    // exception handling (UseExceptionHandler, a dev exception page, a
+                    // custom filter) further up the pipeline, which may still run and needs
+                    // to own the response. Note that with CappedTeeStream, any bytes the
+                    // endpoint already wrote before throwing were streamed to the client in
+                    // real time - that's unavoidable and correct: it's exactly what would
+                    // have happened if FootLook were not installed, since a partial write to
+                    // a real response stream can't be un-sent once it leaves the process.
+                    // We only record what we observed and rethrow immediately so the real
+                    // handler runs exactly as it would if FootLook were not installed.
                     _logger.LogError(capturedException, "FootLook captured failure for {Method} {Path}", context.Request.Method, context.Request.Path);
 
                     var failureHeaders = CaptureHeaders(context, out var failureMaskedHeaderCount);
                     var failureMaskedPath = MaskPathAndQuery(context, out var failureMaskedQueryParameterCount);
                     var failureMaskedRequestBodyFieldCount = 0;
                     var failureMaskedRequestBody = requestBodyCaptured
-                        ? TrimBody(MaskSensitiveBodyFields(requestBody, out failureMaskedRequestBodyFieldCount))
+                        ? TrimBody(MaskSensitiveBodyFields(requestBody, out failureMaskedRequestBodyFieldCount), requestTruncated)
                         : null;
                     var failureClientIp = MaskClientIp(context.Connection.RemoteIpAddress?.ToString(), out var failureClientIpAnonymized);
                     var failureUserAgent = MaskUserAgent(context.Request.Headers.UserAgent.ToString(), out var failureUserAgentAnonymized);
+
+                    // The endpoint may have written some response bytes (headers, a partial
+                    // body) before throwing - CappedTeeStream already mirrored up to
+                    // MaxBodyLength of whatever went out, so surface it the same as the
+                    // success path instead of always reporting an empty response.
+                    var failurePartialResponseBytes = teeStream.GetCapturedBytes();
+                    var failureResponseBodyCaptured = _options.CaptureResponseBody && failurePartialResponseBytes.Length > 0;
+                    var failureMaskedResponseBodyFieldCount = 0;
+                    var failureMaskedResponseBody = failureResponseBodyCaptured
+                        ? TrimBody(
+                            MaskSensitiveBodyFields(Encoding.UTF8.GetString(failurePartialResponseBytes), out failureMaskedResponseBodyFieldCount),
+                            teeStream.CaptureTruncated)
+                        : null;
 
                     var failureCapturedRequest = new CapturedRequest
                     {
@@ -359,15 +410,15 @@ namespace FootLook.Core.Middleware
                         Method = context.Request.Method,
                         Path = failureMaskedPath,
                         RequestBody = failureMaskedRequestBody,
-                        ResponseBody = null,
+                        ResponseBody = failureMaskedResponseBody,
                         // Recorded for observability only - the client's actual status is
                         // whatever the host's real exception handler decides, since we never
                         // write to context.Response here.
                         StatusCode = 500,
                         RequestContentType = context.Request.ContentType,
                         RequestSizeBytes = context.Request.ContentLength ?? (string.IsNullOrEmpty(requestBody) ? 0 : Encoding.UTF8.GetByteCount(requestBody)),
-                        ResponseContentType = null,
-                        ResponseSizeBytes = 0,
+                        ResponseContentType = context.Response.ContentType,
+                        ResponseSizeBytes = failurePartialResponseBytes.Length,
                         DurationMs = stopwatch.ElapsedMilliseconds,
                         Exception = capturedException.Message,
                         CorrelationId = correlationId,
@@ -380,9 +431,11 @@ namespace FootLook.Core.Middleware
                         ServiceName = _options.ServiceName,
                         EnvironmentName = _options.EnvironmentName,
                         RequestBodyCaptured = requestBodyCaptured,
-                        ResponseBodyCaptured = false,
+                        ResponseBodyCaptured = failureResponseBodyCaptured,
                         RequestBodySkippedReason = requestBodySkippedReason,
-                        ResponseBodySkippedReason = "Endpoint threw before a response body was produced",
+                        ResponseBodySkippedReason = failureResponseBodyCaptured
+                            ? null
+                            : "Endpoint threw before a response body was produced",
                         ClientIp = failureClientIp,
                         UserAgent = failureUserAgent,
                         CaptureScopeId = captureScopeId,
@@ -392,7 +445,7 @@ namespace FootLook.Core.Middleware
 
                     if (_options.EnablePrivacyAudit && _options.EnablePiiMasking)
                     {
-                        var failureTotalMasks = failureMaskedHeaderCount + failureMaskedQueryParameterCount + failureMaskedRequestBodyFieldCount;
+                        var failureTotalMasks = failureMaskedHeaderCount + failureMaskedQueryParameterCount + failureMaskedRequestBodyFieldCount + failureMaskedResponseBodyFieldCount;
                         if (failureTotalMasks > 0)
                         {
                             _privacyAuditStore.Add(new PrivacyAuditEntry(
@@ -403,7 +456,7 @@ namespace FootLook.Core.Middleware
                                 MaskedHeaders: failureMaskedHeaderCount,
                                 MaskedQueryParameters: failureMaskedQueryParameterCount,
                                 MaskedRequestBodyFields: failureMaskedRequestBodyFieldCount,
-                                MaskedResponseBodyFields: 0,
+                                MaskedResponseBodyFields: failureMaskedResponseBodyFieldCount,
                                 ClientIpAnonymized: failureClientIpAnonymized,
                                 UserAgentAnonymized: failureUserAgentAnonymized,
                                 RedactionValue: GetRedactionValue()), _options.PrivacyAuditMaxEntries);
@@ -414,6 +467,7 @@ namespace FootLook.Core.Middleware
                 }
 
                 bool responseBodyCaptured = false;
+                bool responseTruncated = false;
                 string? responseBodySkippedReason = null;
 
                 if (!_options.CaptureResponseBody)
@@ -426,17 +480,14 @@ namespace FootLook.Core.Middleware
                 }
                 else
                 {
-                    responseBodyCopy.Position = 0;
-
-                    responseBody = await new StreamReader(responseBodyCopy)
-                        .ReadToEndAsync();
-
-                    responseBodyCopy.Position = 0;
+                    // Every byte was already streamed straight to the client as the
+                    // endpoint wrote it (see CappedTeeStream) - nothing left to copy here,
+                    // just decode whatever the tee mirrored into its bounded side-buffer.
+                    responseBody = Encoding.UTF8.GetString(teeStream.GetCapturedBytes());
+                    responseTruncated = teeStream.CaptureTruncated;
 
                     responseBodyCaptured = true;
                 }
-
-                await responseBodyCopy.CopyToAsync(originalResponseBody);
 
                 var headers = CaptureHeaders(context, out var maskedHeaderCount);
                 var maskedPath = MaskPathAndQuery(context, out var maskedQueryParameterCount);
@@ -444,10 +495,10 @@ namespace FootLook.Core.Middleware
                 var maskedRequestBodyFieldCount = 0;
                 var maskedResponseBodyFieldCount = 0;
                 var maskedRequestBody = requestBodyCaptured
-                    ? TrimBody(MaskSensitiveBodyFields(requestBody, out maskedRequestBodyFieldCount))
+                    ? TrimBody(MaskSensitiveBodyFields(requestBody, out maskedRequestBodyFieldCount), requestTruncated)
                     : null;
                 var maskedResponseBody = responseBodyCaptured
-                    ? TrimBody(MaskSensitiveBodyFields(responseBody, out maskedResponseBodyFieldCount))
+                    ? TrimBody(MaskSensitiveBodyFields(responseBody, out maskedResponseBodyFieldCount), responseTruncated)
                     : null;
                 var anonymizedClientIp = MaskClientIp(context.Connection.RemoteIpAddress?.ToString(), out var clientIpAnonymized);
                 var anonymizedUserAgent = MaskUserAgent(context.Request.Headers.UserAgent.ToString(), out var userAgentAnonymized);
@@ -519,7 +570,12 @@ namespace FootLook.Core.Middleware
             }
         }
 
-        private string TrimBody(string body)
+        /// <param name="alreadyTruncated">
+        /// True when the caller already knows more data existed than was read/captured
+        /// (e.g. CappedTeeStream or the bounded request read hit their byte/char cap), even
+        /// if <paramref name="body"/>'s length alone wouldn't reveal that after masking.
+        /// </param>
+        private string TrimBody(string body, bool alreadyTruncated = false)
         {
             if (string.IsNullOrEmpty(body))
             {
@@ -528,7 +584,7 @@ namespace FootLook.Core.Middleware
 
             if (body.Length <= _options.MaxBodyLength)
             {
-                return body;
+                return alreadyTruncated ? body + "...(truncated)" : body;
             }
 
             return body[.._options.MaxBodyLength] + "...(truncated)";
