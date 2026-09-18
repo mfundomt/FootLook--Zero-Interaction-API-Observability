@@ -11,14 +11,12 @@ namespace FootLook.Core.Interfaces
     /// </summary>
     public class InMemorySink : IShadowSink, IShadowCaptureStore
     {
-        private readonly IHttpContextAccessor? _httpContextAccessor;
         private readonly ConcurrentQueue<CapturedRequest> _request = new ConcurrentQueue<CapturedRequest>();
         private readonly FootLookOptions _options;
 
-        public InMemorySink(FootLookOptions options, IHttpContextAccessor? httpContextAccessor = null)
+        public InMemorySink(FootLookOptions options)
         {
             _options = options;
-            _httpContextAccessor = httpContextAccessor;
         }
 
         public Task WriteAsync(CapturedRequest request)
@@ -46,18 +44,28 @@ namespace FootLook.Core.Interfaces
             return _request.ToList();
         }
 
-        public void Clear()
+        public void Clear(string? scopeId)
         {
-            var scopeId = _httpContextAccessor?.HttpContext?.Request.Cookies["footlook_scope_id"];
-
             if (string.IsNullOrWhiteSpace(scopeId))
             {
                 // No active browser scope -> do not perform a global wipe.
                 return;
             }
 
-            while (_request.TryDequeue(out _)) 
+            // ConcurrentQueue has no in-place filtered removal, so drain everything
+            // and re-enqueue whatever doesn't belong to the caller's scope.
+            var retained = new List<CapturedRequest>();
+            while (_request.TryDequeue(out var captured))
             {
+                if (!string.Equals(captured.CaptureScopeId, scopeId, StringComparison.Ordinal))
+                {
+                    retained.Add(captured);
+                }
+            }
+
+            foreach (var captured in retained)
+            {
+                _request.Enqueue(captured);
             }
         }
 

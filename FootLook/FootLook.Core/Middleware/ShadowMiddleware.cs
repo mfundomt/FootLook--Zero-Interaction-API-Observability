@@ -408,6 +408,7 @@ namespace FootLook.Core.Middleware
                     ResponseBodySkippedReason = responseBodySkippedReason,
                     ClientIp = anonymizedClientIp,
                     UserAgent = anonymizedUserAgent,
+                    CaptureScopeId = captureScopeId,
                 };
 
                 await _queue.EnqueueAsync(capturedRequest);
