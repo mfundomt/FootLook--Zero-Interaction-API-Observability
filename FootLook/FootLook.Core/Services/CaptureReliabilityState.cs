@@ -11,6 +11,7 @@ namespace FootLook.Core.Services
         private long _persistFailureCount;
         private long _broadcastFailureCount;
         private long _retryAttemptCount;
+        private long _queueDropCount;
         private long _lastProcessedUnixTimeSeconds;
         private readonly Queue<double> _ingestLatencySamples = new();
         private readonly object _latencyLock = new();
@@ -58,6 +59,17 @@ namespace FootLook.Core.Services
             AddEvent($"broadcast-failed: {reason}");
         }
 
+        /// <summary>
+        /// A capture was silently evicted from the in-memory queue before the background
+        /// worker ever saw it (DropOldest under sustained overload). Previously this kind
+        /// of loss had zero visibility anywhere in the system.
+        /// </summary>
+        public void RecordQueueDrop(string reason)
+        {
+            Interlocked.Increment(ref _queueDropCount);
+            AddEvent($"queue-drop: {reason}");
+        }
+
         public ReliabilitySnapshot Snapshot(int recentEventCount = 20)
         {
             var safeCount = Math.Clamp(recentEventCount, 1, 100);
@@ -68,10 +80,15 @@ namespace FootLook.Core.Services
 
             var processed = Interlocked.Read(ref _processedCount);
             var persistFailures = Interlocked.Read(ref _persistFailureCount);
-            var totalPersistAttempts = processed + persistFailures;
-            var eventLossRatePercent = totalPersistAttempts <= 0
+            var queueDrops = Interlocked.Read(ref _queueDropCount);
+
+            // Denominator includes queue drops too - they're captures that never even
+            // reached the worker, so they belong in "how much are we actually losing",
+            // not just persist failures.
+            var totalCaptureAttempts = processed + persistFailures + queueDrops;
+            var eventLossRatePercent = totalCaptureAttempts <= 0
                 ? 0
-                : (persistFailures / (double)totalPersistAttempts) * 100;
+                : ((persistFailures + queueDrops) / (double)totalCaptureAttempts) * 100;
 
             List<double> latencySnapshot;
             lock (_latencyLock)
@@ -103,6 +120,7 @@ namespace FootLook.Core.Services
                 PersistFailureCount: persistFailures,
                 BroadcastFailureCount: Interlocked.Read(ref _broadcastFailureCount),
                 RetryAttemptCount: Interlocked.Read(ref _retryAttemptCount),
+                QueueDropCount: queueDrops,
                 AverageIngestLatencyMs: averageLatencyMs,
                 P95IngestLatencyMs: p95LatencyMs,
                 EventLossRatePercent: eventLossRatePercent,
@@ -161,6 +179,7 @@ namespace FootLook.Core.Services
         long PersistFailureCount,
         long BroadcastFailureCount,
         long RetryAttemptCount,
+        long QueueDropCount,
         double AverageIngestLatencyMs,
         double P95IngestLatencyMs,
         double EventLossRatePercent,

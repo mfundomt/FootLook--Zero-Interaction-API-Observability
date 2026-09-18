@@ -58,15 +58,25 @@ Legend: `[x]` done and merged into `staging` · `[ ]` not started · `[~]` parti
   `README.NuGet.md` instead of "removing" config that was never actually
   CORS-related.
   Branch: `fix/mislabeled-cors-comment`
-- [ ] **No durability** — in-memory-only queue, no crash recovery, queue-level
-  drops (`DropOldest`) not even counted. **Needs a direction-setting
-  conversation** (durable queue? accept the tradeoff and just add drop
-  metrics?) before coding.
-- [ ] **No horizontal scaling story** — queue, dedupe cache, in-memory store are
-  all per-instance singletons; breaks behind a load balancer with multiple
-  pods. **Same conversation as durability** — likely resolved together (e.g.
-  an external store) or explicitly scoped out as "single-instance only" for
-  now.
+- [x] **Queue-level drops now visible** — `DropOldest` evictions were
+  completely silent before; `ShadowQueue` now detects (best-effort, under
+  concurrent writers) when a write evicts the oldest queued capture and
+  records it via `CaptureReliabilityState.RecordQueueDrop`. Surfaced as
+  `QueueDropCount` on `GET {EndpointBasePath}/reliability/status`, and folded
+  into the existing `EventLossRatePercent` SLO calculation alongside persist
+  failures. Drive-by fix: removed `ShadowQueue`'s redundant double channel
+  allocation (a field initializer that was immediately overwritten in the
+  constructor).
+  Branch: `fix/queue-drop-visibility`
+- [x] **Durability/horizontal scaling — direction decided, not implemented**:
+  true multi-instance support (external shared store + SignalR backplane)
+  is explicitly scoped OUT of this fix pass as its own future initiative
+  needing dedicated design (backend choice, hosting budget, migration path).
+  FootLook is documented as single-instance-only for now
+  (`README.NuGet.md`, `FootLookOptions.QueCapacity` xmldoc) rather than
+  silently implying otherwise. The cheap, isolated durability win (queue-drop
+  visibility, above) was done; the expensive one (external store, cross-
+  instance dedupe, SignalR backplane) was deliberately not attempted here.
 - [ ] **Unbounded body buffering / no streaming support** — bodies fully read
   into memory before `MaxBodyLength` truncation applies; SSE/large downloads
   get fully buffered instead of streamed through.
@@ -110,9 +120,10 @@ Legend: `[x]` done and merged into `staging` · `[ ]` not started · `[~]` parti
 
 ## What's next (in order)
 
-1. **Durability/scaling conversation** — needs your input on deployment target
-   (single instance vs. multi-instance) before any code.
-2. Remaining High-bucket items that don't need a product decision: unbounded
+1. Remaining High-bucket items that don't need a product decision: unbounded
    body buffering/streaming, dashboard debouncing, field-aware PII masking.
-3. Medium bucket.
-4. Low/cleanup bundle — small enough to batch into one pass at the end.
+2. Medium bucket.
+3. Low/cleanup bundle — small enough to batch into one pass at the end.
+4. (Future, separate initiative) True multi-instance support — external
+   shared store + SignalR backplane. Needs its own dedicated design pass,
+   not part of this checklist.

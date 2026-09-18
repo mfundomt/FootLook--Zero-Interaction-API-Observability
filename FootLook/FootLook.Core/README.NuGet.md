@@ -187,8 +187,21 @@ By default FootLook uses:
 
 No database is required. Data is combined through a composite sink and processed by a background worker draining the capture queue.
 
+**Known limitation: single-instance only.** The capture queue, in-memory store,
+and request-deduplication cache are all in-process state. Behind a load
+balancer with multiple instances/pods, each instance sees only its own slice
+of traffic, with no unified view and no cross-instance deduplication.
+Multi-instance support would need an external shared store and a SignalR
+backplane (e.g. Redis) and isn't implemented yet — treat FootLook as a
+single-instance/single-host tool for now.
+
 ## Notes
 
 - Targets .NET 8.
 - Add `UseFootLook()` early in the pipeline so it can observe the full request lifecycle.
 - Add capture-related paths (dashboard, swagger, favicon) to `IgnoredPaths` to avoid self-capture noise.
+- The capture queue is bounded (`QueCapacity`) and drops the oldest queued
+  capture under sustained overload rather than blocking request threads or
+  growing unbounded. Drops are counted and visible via
+  `GET {EndpointBasePath}/reliability/status` (`QueueDropCount`) so silent
+  data loss under load is at least observable.
