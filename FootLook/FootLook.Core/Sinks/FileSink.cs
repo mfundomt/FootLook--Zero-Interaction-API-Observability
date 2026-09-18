@@ -20,9 +20,6 @@ namespace FootLook.Core.Sinks
             //check file size before each write and rotate if necessary to avoid unbounded file growth
             RotateFileIfItExceedsLimit();
 
-            //clean up old archives on each write to ensure we don't keep old files around indefinitely
-             CleanupOldArchives();
-
             var json = JsonSerializer.Serialize(request);
             await File.AppendAllTextAsync(_filepath, json + Environment.NewLine);
         }
@@ -40,9 +37,16 @@ namespace FootLook.Core.Sinks
                 return;
             }
 
-            var archivePath = Path.Combine(Path.GetDirectoryName(_filepath)!, 
+            var archivePath = Path.Combine(Path.GetDirectoryName(_filepath)!,
                                           $"{Path.GetFileNameWithoutExtension(_filepath)}_{DateTime.UtcNow:yyyyMMddHHmmss}.jsonl");
             File.Move(_filepath, archivePath);
+
+            // Only worth scanning the directory for expired archives right after we just
+            // created one - rotation is rare (MaxFileSizeBytes is 100MB by default), so this
+            // keeps the directory scan off the per-write hot path entirely instead of
+            // running it (and its full Directory.GetFiles + per-file stat cost) on every
+            // single capture.
+            CleanupOldArchives();
         }
 
         public void CleanupOldArchives()

@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Components.Web;
 using FootLook.Core.Services;
 using System.Text.RegularExpressions;
 using System.Security.Cryptography;
+using System.Collections.Concurrent;
 
 #region FootLook Middleware Flow
 //The flow of the middleware can be visualized as follows:
@@ -47,6 +48,11 @@ namespace FootLook.Core.Middleware
         private readonly CaptureRuntimeState _captureRuntimeState;
         private readonly PrivacyAuditStore _privacyAuditStore;
 
+        // ShadowMiddleware is constructed once for the app's lifetime (standard
+        // UseMiddleware<T> convention), so these compiled regexes are built once per
+        // distinct field name the app ever sees and reused for every subsequent request,
+        // instead of being rebuilt from scratch on every single capture.
+        private readonly ConcurrentDictionary<string, (Regex Json, Regex Query)> _sensitiveFieldRegexCache = new(StringComparer.Ordinal);
 
         public ShadowMiddleware(RequestDelegate next, IShadowQueue queue, FootLookOptions options, ILogger<ShadowMiddleware> logger, CaptureRuntimeState captureRuntimeState, PrivacyAuditStore privacyAuditStore)
         {
@@ -632,27 +638,30 @@ namespace FootLook.Core.Middleware
                     continue;
                 }
 
-                var escapedField = Regex.Escape(sensitiveField.Trim());
-                var jsonPattern = $"(\"{escapedField}\"\\s*:\\s*)(\".*?\"|[^,\\}}\\]]+)";
-                var queryPattern = $"((?:^|[&?]){escapedField}=)([^&\\s]*)";
+                var (jsonRegex, queryRegex) = GetOrCompileFieldRegex(sensitiveField.Trim());
 
-                maskedFieldCount += Regex.Matches(body, jsonPattern, RegexOptions.IgnoreCase | RegexOptions.Singleline).Count;
-                maskedFieldCount += Regex.Matches(body, queryPattern, RegexOptions.IgnoreCase).Count;
+                maskedFieldCount += jsonRegex.Matches(body).Count;
+                maskedFieldCount += queryRegex.Matches(body).Count;
 
-                body = Regex.Replace(
-                    body,
-                    jsonPattern,
-                    m => $"{m.Groups[1].Value}\"{redaction}\"",
-                    RegexOptions.IgnoreCase | RegexOptions.Singleline);
-
-                body = Regex.Replace(
-                    body,
-                    queryPattern,
-                    m => $"{m.Groups[1].Value}{redaction}",
-                    RegexOptions.IgnoreCase);
+                body = jsonRegex.Replace(body, m => $"{m.Groups[1].Value}\"{redaction}\"");
+                body = queryRegex.Replace(body, m => $"{m.Groups[1].Value}{redaction}");
             }
 
             return body;
+        }
+
+        private (Regex Json, Regex Query) GetOrCompileFieldRegex(string sensitiveField)
+        {
+            return _sensitiveFieldRegexCache.GetOrAdd(sensitiveField, field =>
+            {
+                var escapedField = Regex.Escape(field);
+                var jsonPattern = $"(\"{escapedField}\"\\s*:\\s*)(\".*?\"|[^,\\}}\\]]+)";
+                var queryPattern = $"((?:^|[&?]){escapedField}=)([^&\\s]*)";
+
+                var json = new Regex(jsonPattern, RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
+                var query = new Regex(queryPattern, RegexOptions.IgnoreCase | RegexOptions.Compiled);
+                return (json, query);
+            });
         }
 
         private string MaskPathAndQuery(HttpContext context, out int maskedQueryCount)
