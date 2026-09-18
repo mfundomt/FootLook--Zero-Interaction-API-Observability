@@ -98,11 +98,18 @@ Legend: `[x]` done and merged into `staging` · `[ ]` not started · `[~]` parti
   captured truncated the same way; masking, exception-path capture, and
   normal traffic all still work.
   Branch: `fix/streaming-and-bounded-body-buffering`
-- [ ] **Dashboard fan-out entirely client-side, no debouncing** — every live
-  event triggers a full REST re-fetch + full table re-render; will choke at
-  real production volume. (Scope-based SignalR groups already cut the blast
-  radius as a side effect of the critical fix, but the debounce/batch problem
-  itself is untouched.)
+- [x] **Dashboard fan-out entirely client-side, no debouncing** — every
+  `captureReceived` event used to trigger its own full REST re-fetch (stats +
+  paged list) and full table re-render, one-to-one. Replaced with a
+  throttle (not a naive resetting debounce, which could starve indefinitely
+  under continuous traffic): incoming captures queue up, and at most one
+  refresh fires per 300ms window covering however many arrived in it.
+  Verified with a 20-event burst through a real browser: REST calls to
+  `/captures/stats` dropped from 20 (one-to-one) to 8, while all 20 captures
+  still show up correctly (`Total Requests: 20` on the dashboard) - throttled,
+  not lost. (Scope-based SignalR groups from the critical fix already cut the
+  blast radius across dashboards; this fixes the same-dashboard, high-volume
+  re-render cost.)
 - [ ] **Field-name-only PII masking** — separate from the recompilation fix
   above. Only exact configured field names are masked; nested objects,
   arrays, or differently-named fields (`userSSN`, `customer.ssn`) still slip

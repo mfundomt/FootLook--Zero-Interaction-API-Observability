@@ -2235,6 +2235,39 @@
                 await loadStats();
             }
 
+            // Live captures arrive as individual SignalR events, but at real production
+            // volume (tens+/sec) handling each one with its own REST re-fetch and full
+            // table re-render would flood both the browser and the server with redundant
+            // work. This throttles instead of naively debouncing: a burst of events within
+            // the window collapses into exactly one refresh at the end of it, but - unlike
+            // a resetting debounce - continuous traffic can't starve the UI indefinitely,
+            // since a flush is guaranteed at least once per window regardless of how many
+            // more events keep arriving during it.
+            var LIVE_REFRESH_THROTTLE_MS = 300;
+            var pendingLiveCaptures = [];
+            var liveRefreshTimer = null;
+
+            function scheduleLiveRefresh() {
+                if (liveRefreshTimer) return;
+
+                liveRefreshTimer = setTimeout(async function () {
+                    var batch = pendingLiveCaptures;
+                    pendingLiveCaptures = [];
+                    liveRefreshTimer = null;
+
+                    if (batch.length === 0) return;
+
+                    mergeChartCaptures(batch);
+                    var now = Date.now();
+                    batch.forEach(function () { state.recentTimestamps.push(now); });
+
+                    renderKPIs();
+                    renderChart();
+
+                    if (!state.livePaused && state.page === 1) await refreshAll(1);
+                }, LIVE_REFRESH_THROTTLE_MS);
+            }
+
             function updateLiveIndicators() {
                 if (state.livePaused) {
                     el['live-dot'].className = 'live-dot paused';
@@ -2403,17 +2436,12 @@
                     .withAutomaticReconnect()
                     .build();
 
-                connection.on('captureReceived', async function (payload) {
+                connection.on('captureReceived', function (payload) {
                     var capture = normalizeCapture(payload);
                     if (!isCaptureInObservedSession(capture)) return;
 
-                    mergeChartCaptures([capture]);
-                    state.recentTimestamps.push(Date.now());
-
-                    renderKPIs();
-                    renderChart();
-
-                    if (!state.livePaused && state.page === 1) await refreshAll(1);
+                    pendingLiveCaptures.push(capture);
+                    scheduleLiveRefresh();
                 });
 
                 connection.onreconnecting(function () { el['live-status-text'].textContent = 'Reconnecting...'; });
