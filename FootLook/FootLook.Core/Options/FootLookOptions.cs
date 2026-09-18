@@ -52,6 +52,14 @@ namespace FootLook.Core.Options
 
         public string EndpointBasePath { get; set; } = "/footlook";
 
+        /// <summary>
+        /// Max in-flight captures buffered between ShadowMiddleware and
+        /// ShadowBackgroundWorker. This is in-process, in-memory state (not durable across
+        /// a restart) - under sustained overload beyond this capacity, the oldest queued
+        /// capture is dropped to make room for new ones rather than blocking request
+        /// threads. Drops are counted and visible via QueueDropCount on
+        /// GET {EndpointBasePath}/reliability/status.
+        /// </summary>
         public int QueCapacity { get; set; } = 10_000;
 
         public bool Enabled { get; set; } = true;
