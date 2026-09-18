@@ -20,6 +20,8 @@ namespace FootLook.Core.Services
         private readonly CaptureReliabilityState _reliabilityState;
         private readonly ProductOutcomeMetricsService _productOutcomeMetrics;
         private readonly ConcurrentDictionary<string, DateTime> _recentRequestKeys = new(StringComparer.OrdinalIgnoreCase);
+        private long _nextDedupeSweepUnixMs;
+        private const int DedupeSweepIntervalMs = 5000;
 
         public ShadowBackgroundWorker(
             IShadowQueue  queue,
@@ -161,13 +163,7 @@ namespace FootLook.Core.Services
             var windowSeconds = Math.Max(1, _options.DeduplicationWindowSeconds);
             var cutoff = now.AddSeconds(-windowSeconds);
 
-            foreach (var existing in _recentRequestKeys)
-            {
-                if (existing.Value < cutoff)
-                {
-                    _recentRequestKeys.TryRemove(existing.Key, out _);
-                }
-            }
+            SweepExpiredDedupeKeysIfDue(cutoff);
 
             if (_recentRequestKeys.TryGetValue(dedupeKey, out var seenAt) && seenAt >= cutoff)
             {
@@ -177,6 +173,38 @@ namespace FootLook.Core.Services
 
             _recentRequestKeys[dedupeKey] = now;
             return false;
+        }
+
+        /// <summary>
+        /// Expired dedupe keys used to be swept with a full dictionary scan on every single
+        /// request - fine at low volume, an O(n) cost paid on every request at high volume.
+        /// This time-gates the sweep to at most once per DedupeSweepIntervalMs regardless of
+        /// request rate: entries a little late to be evicted are harmless (TryGetValue's own
+        /// cutoff check below still rejects them as expired), but the sweep itself no longer
+        /// scales with traffic volume.
+        /// </summary>
+        private void SweepExpiredDedupeKeysIfDue(DateTime cutoff)
+        {
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var next = Interlocked.Read(ref _nextDedupeSweepUnixMs);
+            if (nowMs < next)
+            {
+                return;
+            }
+
+            if (Interlocked.CompareExchange(ref _nextDedupeSweepUnixMs, nowMs + DedupeSweepIntervalMs, next) != next)
+            {
+                // Another call already claimed this sweep window.
+                return;
+            }
+
+            foreach (var existing in _recentRequestKeys)
+            {
+                if (existing.Value < cutoff)
+                {
+                    _recentRequestKeys.TryRemove(existing.Key, out _);
+                }
+            }
         }
 
         private static string BuildDedupeKey(CapturedRequest request)

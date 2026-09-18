@@ -133,16 +133,32 @@ Legend: `[x]` done and merged into `staging` · `[ ]` not started · `[~]` parti
 - [x] **Errors only logged to `Console.Error`** — fixed as a side effect of the
   `CompositeSink` reliability work; now goes through `ILogger` and
   `CaptureReliabilityState`.
-- [ ] **Dedupe cache O(n) full scan per request** to expire old entries.
-- [ ] **`InMemorySink` caps by item count only, not total bytes** — large bodies
-  can still balloon memory even under the count cap.
+- [x] **Dedupe cache O(n) full scan per request** — the expired-key sweep now
+  runs at most once per 5 seconds (time-gated via an interlocked next-sweep
+  timestamp) regardless of request volume, instead of scanning the whole
+  dictionary on every single request. A slightly-late eviction is harmless -
+  `IsDuplicateRequest`'s own cutoff check still correctly rejects expired
+  entries in between sweeps.
+- [x] **`InMemorySink` caps by item count only, not total bytes** — added
+  `FootLookOptions.MaxInMemoryCaptureBytes` (default 200MB, 0 disables it).
+  Tracks a running estimate of captured body + header text size and evicts
+  the oldest capture whenever either the byte cap or the existing count cap
+  (`MaxInMemoryCaptures`) is exceeded. `Clear` and retention pruning keep the
+  estimate accurate (recomputed after `Clear`'s drain-and-reinsert; decremented
+  per evicted item during retention pruning).
+- [x] **`MongoCaptureRepository.SearchAsync` ignored its own filters** — fixed
+  to actually build a Mongo filter from `path`/`minStatusCode`/`minDuration`/
+  `correlationId` instead of unconditionally returning the first 100
+  documents regardless of what was asked for. (The full-collection-scan cost
+  of `GetStatsAsync`, and the fact this repository isn't wired to any active
+  endpoint in the demo, are unchanged - those are scale/wiring concerns
+  distinct from this correctness bug, and this repository is dead code in
+  the current demo regardless per the architecture docs.)
+  Branch (all three above): `fix/medium-backend-issues`
 - [ ] **SignalR reconnect doesn't re-sync missed captures** — dashboard can
   silently show a gap without knowing it.
 - [ ] **RPM counter can double/undercount** across reloads and reconnects
   (client-local, not server-computed).
-- [ ] **`MongoCaptureRepository` is dead weight** — pulls entire collections into
-  memory, `SearchAsync` ignores its own filters, not wired to any active
-  endpoint.
 
 ## 🟢 Low / cleanup (bundle, not yet started)
 
