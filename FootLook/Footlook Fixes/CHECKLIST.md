@@ -110,10 +110,23 @@ Legend: `[x]` done and merged into `staging` · `[ ]` not started · `[~]` parti
   not lost. (Scope-based SignalR groups from the critical fix already cut the
   blast radius across dashboards; this fixes the same-dashboard, high-volume
   re-render cost.)
-- [ ] **Field-name-only PII masking** — separate from the recompilation fix
-  above. Only exact configured field names are masked; nested objects,
-  arrays, or differently-named fields (`userSSN`, `customer.ssn`) still slip
-  through. Needs schema-aware (JSON-structural) masking, not just caching.
+- [x] **Field-name-only PII masking — investigated, partially a non-issue**:
+  the "nested/differently-named fields slip through" framing was half
+  inaccurate. Masking is text-pattern based, not JSON-tree based, so it
+  already matches a configured field name at *any* nesting depth or inside
+  arrays - verified with `user.credentials.password` (2 levels deep) and an
+  array of objects each with their own `cvv`, both masked correctly. The
+  real, unavoidable gap is genuinely differently-named fields
+  (`userSSN` when only `ssn` is configured) - name-based matching can only
+  ever catch names you've told it about. Mitigated by expanding the default
+  `SensitiveBodyFields`/`SensitiveQueryParameters` lists with common
+  variants (`socialSecurityNumber`, `cardNumber`, `cvc`, `pin`,
+  `clientSecret`, `privateKey`, etc.) and documenting the limitation clearly
+  in `FootLookOptions` xmldoc. True unknown-field-name detection would need
+  value-shape heuristics (Luhn-checked card numbers, SSN-shaped strings)
+  with a real false-positive risk - scoped out as a distinct future feature,
+  same treatment as multi-instance scaling.
+  Branch: `fix/pii-masking-coverage`
 
 ## 🟡 Medium
 

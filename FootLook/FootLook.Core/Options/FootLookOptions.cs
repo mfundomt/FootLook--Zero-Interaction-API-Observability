@@ -46,9 +46,34 @@ namespace FootLook.Core.Options
         public List<string> IgnoredPaths { get; set; } = new();
         public List<string> SensitiveHeaders { get; set; } = new List<string>() { "Authorization", "Cookie", "Set-Cookie", "X-Api-Key" };
 
-        public List<string> SensitiveBodyFields { get; set; } = new List<string>() { "password", "token", "accessToken", "refreshToken", "credit_card_number", "ssn", "cvv", "secret", "apiKey" };
+        /// <summary>
+        /// JSON field names to mask in captured request/response bodies (case-insensitive
+        /// exact match). Matching is text-pattern based, not JSON-tree based, so it already
+        /// finds a configured name at any nesting depth or inside arrays - "password" is
+        /// masked the same whether it's top-level, inside "user.credentials.password", or
+        /// repeated across every element of an array. What it cannot do is catch a field
+        /// under a name that isn't in this list ("userSSN" when only "ssn" is configured,
+        /// or an app-specific field like "clientSecretKey") - add the specific names your
+        /// application actually uses. Detecting sensitive VALUES regardless of field name
+        /// (e.g. recognizing a credit-card-shaped number in an arbitrarily-named field) is
+        /// a distinct, heuristic-based feature that isn't implemented - it would need
+        /// pattern/shape detection (Luhn-checked card numbers, SSN formats, etc.) with a
+        /// real false-positive risk, and is out of scope here.
+        /// </summary>
+        public List<string> SensitiveBodyFields { get; set; } = new List<string>()
+        {
+            "password", "token", "accessToken", "refreshToken", "credit_card_number",
+            "creditCardNumber", "cardNumber", "card_number", "ssn", "socialSecurityNumber",
+            "social_security_number", "cvv", "cvc", "pin", "secret", "clientSecret",
+            "client_secret", "apiKey", "api_key", "privateKey", "private_key"
+        };
 
-        public List<string> SensitiveQueryParameters { get; set; } = new List<string>() { "password", "token", "access_token", "refresh_token", "apikey", "api_key", "code", "secret" };
+        /// <summary>Same matching behavior/limitations as <see cref="SensitiveBodyFields"/>, applied to query string parameter names.</summary>
+        public List<string> SensitiveQueryParameters { get; set; } = new List<string>()
+        {
+            "password", "token", "access_token", "refresh_token", "apikey", "api_key",
+            "code", "secret", "client_secret", "clientSecret"
+        };
 
         public string EndpointBasePath { get; set; } = "/footlook";
 
