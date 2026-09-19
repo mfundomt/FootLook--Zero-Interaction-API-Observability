@@ -155,10 +155,23 @@ Legend: `[x]` done and merged into `staging` · `[ ]` not started · `[~]` parti
   distinct from this correctness bug, and this repository is dead code in
   the current demo regardless per the architecture docs.)
   Branch (all three above): `fix/medium-backend-issues`
-- [ ] **SignalR reconnect doesn't re-sync missed captures** — dashboard can
-  silently show a gap without knowing it.
-- [ ] **RPM counter can double/undercount** across reloads and reconnects
-  (client-local, not server-computed).
+- [x] **SignalR reconnect doesn't re-sync missed captures** — `onreconnected`
+  now triggers `refreshAll(state.page)` to pull whatever was missed during
+  the gap, instead of only updating the connection-status indicator and
+  silently leaving the feed stale.
+- [x] **RPM counter can double/undercount** — root cause confirmed: `loadRecent`
+  unconditionally re-pushes every capture still inside the 60s window into
+  the RPM timestamp list on *every* call (initial load, every throttled live
+  refresh, every filter change), so a capture that stayed within the window
+  across multiple refreshes was counted once per refresh, not once total.
+  Replaced the plain array (`recentTimestamps`) with a capture-id-keyed map
+  (`recentCaptureTimestampsById`) - re-processing the same capture now
+  overwrites its own entry instead of adding a duplicate, so RPM correctly
+  reflects distinct captures regardless of how many times a refresh touches
+  them. Verified via Playwright: sent 5 distinct captures, RPM read 5, then
+  held steady at 5 through 3+ additional throttled refresh cycles with no
+  new traffic (previously this would have inflated with each refresh).
+  Branch (both above): `fix/medium-frontend-issues`
 
 ## 🟢 Low / cleanup (bundle, not yet started)
 
