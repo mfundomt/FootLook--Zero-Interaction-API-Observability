@@ -1121,6 +1121,119 @@
             z-index: 50;
         }
 
+        .waterfall-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.45);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            z-index: 60;
+        }
+
+            .waterfall-overlay[hidden] {
+                display: none;
+            }
+
+        .waterfall-modal {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            width: min(920px, 100%);
+            max-height: min(720px, 90vh);
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+        }
+
+        .waterfall-modal-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 18px 20px;
+            border-bottom: 1px solid var(--border-soft);
+        }
+
+            .waterfall-modal-head h2 {
+                margin: 0 0 4px;
+                font-size: 16px;
+            }
+
+        .waterfall-subtitle {
+            font-family: var(--font-secondary);
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .waterfall-body {
+            padding: 16px 20px 20px;
+            overflow-y: auto;
+        }
+
+        .waterfall-row {
+            display: grid;
+            grid-template-columns: minmax(140px, 260px) 1fr 64px;
+            align-items: center;
+            gap: 12px;
+            padding: 7px 0;
+            border-bottom: 1px solid var(--border-soft);
+        }
+
+            .waterfall-row:last-child {
+                border-bottom: none;
+            }
+
+        .waterfall-label {
+            font-family: var(--font-secondary);
+            font-size: 12px;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .waterfall-track {
+            position: relative;
+            height: 18px;
+            background: var(--panel-alt);
+            border-radius: 4px;
+        }
+
+        .waterfall-bar {
+            position: absolute;
+            top: 2px;
+            height: 14px;
+            border-radius: 3px;
+            min-width: 3px;
+        }
+
+            .waterfall-bar.status-2xx, .waterfall-bar.status-1xx {
+                background: var(--accent);
+            }
+
+            .waterfall-bar.status-3xx {
+                background: var(--chase);
+            }
+
+            .waterfall-bar.status-4xx, .waterfall-bar.status-5xx {
+                background: var(--crit);
+            }
+
+        .waterfall-duration {
+            font-family: var(--font-secondary);
+            font-size: 11px;
+            color: var(--text-muted);
+            text-align: right;
+        }
+
+        .waterfall-empty {
+            color: var(--text-muted);
+            font-size: 13px;
+            padding: 12px 0;
+        }
+
         .toast {
             background: var(--panel-raised);
             border: 1px solid var(--border);
@@ -1365,6 +1478,19 @@
     </div>
 
     <div class="toast-container" id="toast-container"></div>
+
+    <div class="waterfall-overlay" id="waterfall-overlay" role="dialog" aria-modal="true" aria-labelledby="waterfall-title" hidden>
+        <div class="waterfall-modal">
+            <div class="waterfall-modal-head">
+                <div>
+                    <h2 id="waterfall-title">Trace Waterfall</h2>
+                    <div class="waterfall-subtitle" id="waterfall-subtitle"></div>
+                </div>
+                <button id="waterfall-close-btn" class="btn btn-ghost" type="button" aria-label="Close trace waterfall">✕</button>
+            </div>
+            <div class="waterfall-body" id="waterfall-body"></div>
+        </div>
+    </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
     <script>
@@ -2062,6 +2188,9 @@
                     '<div class="details-head">'
                     + '<span class="status-badge status-' + cls + ' lg">' + row.status + '</span>'
                     + '<span class="details-title mono">' + escapeHtml(row.method + ' ' + row.path) + '</span>'
+                    + (row.correlationId
+                        ? '<button type="button" class="btn btn-ghost view-trace-btn" data-correlation-id="' + escapeHtml(row.correlationId) + '">View Trace</button>'
+                        : '')
                     + '</div>'
                     + '<div class="details-grid">'
                     + detailField('Duration', row.duration + 'ms')
@@ -2074,6 +2203,72 @@
                     + detailField('Outcome', row.ok ? 'Success' : (row.status >= 500 ? 'Server error' : 'Client error'))
                     + '</div>'
                     + '<div class="details-json mono">' + escapeHtml(jsonBlock) + '</div>';
+            }
+
+            // Trace waterfall: shows every capture sharing a correlation ID as a timeline,
+            // so a caller that made several related requests under the same
+            // X-Correlation-ID (a client-propagated header, not a distributed span tree -
+            // FootLook captures one hop at a time, it doesn't stitch together
+            // cross-service spans) can see them laid out against each other instead of
+            // hunting through the paged list one at a time.
+            async function openTraceWaterfall(correlationId) {
+                if (!correlationId) return;
+
+                document.getElementById('waterfall-subtitle').textContent = 'Correlation: ' + correlationId;
+                document.getElementById('waterfall-body').innerHTML = '<div class="waterfall-empty">Loading…</div>';
+                document.getElementById('waterfall-overlay').hidden = false;
+
+                try {
+                    var response = await footlookFetch(
+                        '/footlook/captures?correlationId=' + encodeURIComponent(correlationId)
+                        + '&pageSize=100&sortBy=timestamp&sortDirection=asc');
+
+                    if (!response.ok) throw new Error('Failed to load trace. Status ' + response.status);
+
+                    var payload = await response.json();
+                    var items = payload.results ?? payload.Results ?? [];
+                    renderWaterfall(items.map(normalizeCapture));
+                } catch (err) {
+                    console.error(err);
+                    document.getElementById('waterfall-body').innerHTML = '<div class="waterfall-empty">Failed to load trace.</div>';
+                }
+            }
+
+            function closeTraceWaterfall() {
+                document.getElementById('waterfall-overlay').hidden = true;
+            }
+
+            function renderWaterfall(captures) {
+                var body = document.getElementById('waterfall-body');
+
+                if (captures.length === 0) {
+                    body.innerHTML = '<div class="waterfall-empty">No captures found for this correlation ID.</div>';
+                    return;
+                }
+
+                var sorted = captures.slice().sort(function (a, b) { return a.timestamp - b.timestamp; });
+                var start = sorted[0].timestamp;
+                var end = Math.max.apply(null, sorted.map(function (c) { return c.timestamp + Math.max(0, c.duration); }));
+                var span = Math.max(1, end - start);
+
+                document.getElementById('waterfall-subtitle').textContent =
+                    sorted.length + (sorted.length === 1 ? ' capture' : ' captures') + ' • span ' + span + 'ms';
+
+                body.innerHTML = sorted.map(function (c) {
+                    var offsetPct = ((c.timestamp - start) / span) * 100;
+                    // Minimum visible width so a very fast request still shows a bar,
+                    // not an invisible sliver, on a wide time span.
+                    var widthPct = Math.max(0.6, (Math.max(0, c.duration) / span) * 100);
+                    var label = c.method + ' ' + c.path;
+
+                    return '<div class="waterfall-row">'
+                        + '<div class="waterfall-label" title="' + escapeHtml(label) + '">' + escapeHtml(label) + '</div>'
+                        + '<div class="waterfall-track">'
+                        + '<div class="waterfall-bar status-' + statusClass(c.status) + '" style="left:' + offsetPct.toFixed(2) + '%;width:' + widthPct.toFixed(2) + '%" title="' + c.status + ' • ' + c.duration + 'ms"></div>'
+                        + '</div>'
+                        + '<div class="waterfall-duration">' + c.duration + 'ms</div>'
+                        + '</div>';
+                }).join('');
             }
 
             function renderTable() {
@@ -2466,6 +2661,20 @@
                     if (!row) return;
                     state.selectedId = row.getAttribute('data-id');
                     renderTable();
+                });
+
+                el['capture-details-panel'].addEventListener('click', function (e) {
+                    var btn = e.target.closest('.view-trace-btn');
+                    if (!btn) return;
+                    openTraceWaterfall(btn.getAttribute('data-correlation-id'));
+                });
+
+                document.getElementById('waterfall-close-btn').addEventListener('click', closeTraceWaterfall);
+                document.getElementById('waterfall-overlay').addEventListener('click', function (e) {
+                    if (e.target.id === 'waterfall-overlay') closeTraceWaterfall();
+                });
+                document.addEventListener('keydown', function (e) {
+                    if (e.key === 'Escape') closeTraceWaterfall();
                 });
 
                 el['pause-live-btn'].addEventListener('click', function () {

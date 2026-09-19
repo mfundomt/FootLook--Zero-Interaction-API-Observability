@@ -215,7 +215,27 @@ Legend: `[x]` done and merged into `staging` · `[ ]` not started · `[~]` parti
   the dark theme with no flash.
   Branch: `feature/dark-mode`
 - [x] **Trace-waterfall view across a correlation ID, requested by name after
-  being scoped out** — see below for detail.
+  being scoped out**: no backend change needed - the existing
+  `GET /captures?correlationId=X` filter (already scoped/authenticated) was
+  enough to fetch every capture sharing a correlation ID. Added a "View
+  Trace" button to the Capture Details panel (shown only when the selected
+  capture has a `correlationId`), opening a modal that lays out every
+  capture sharing it on a shared relative timeline: bar position = offset
+  from the earliest capture's start, bar width = that capture's duration,
+  color = outcome (green/amber/red, matching the existing RPM chart's
+  legend), with a minimum visible width so a very fast request doesn't
+  render as an invisible sliver next to a slow one. Closes via an explicit
+  button, clicking the backdrop, or Escape.
+  Important scope note: this is a *correlation-ID timeline*, not a
+  distributed trace/span tree - FootLook observes one hop at a time and
+  doesn't stitch parent/child spans across services. It's exactly as useful
+  as the client-propagated `X-Correlation-ID` header is, no more.
+  Verified via Playwright: sent 4 requests sharing one correlation ID (one
+  to `/`, which is in `IgnoredPaths` and correctly excluded), confirmed 3
+  rows rendered with accurate relative positioning/duration (a 2018ms
+  `/slow` call dominating the timeline, a 2ms `/error` call shown as a thin
+  red bar for its 500 status), and confirmed Escape closes the modal.
+  Branch: `feature/trace-waterfall-view`
 
 ---
 
