@@ -1222,7 +1222,7 @@
                     <button id="next-page-btn" class="btn btn-ghost">Next</button>
                 </div>
             </div>
-            <table>
+            <table aria-label="Live captured requests feed">
                 <thead>
                     <tr>
                         <th>Time</th>
@@ -1233,7 +1233,7 @@
                         <th>Confidence</th>
                     </tr>
                 </thead>
-                <tbody id="capture-tbody"></tbody>
+                <tbody id="capture-tbody" aria-live="polite" aria-atomic="false" aria-relevant="additions"></tbody>
             </table>
         </div>
 
@@ -2363,17 +2363,24 @@
                         toast('Failed to clear captures');
                         return;
                     }
+
+                    // Everything below used to be unreachable: a full-page reload
+                    // (window.location.href = ...) ran first and navigated away before any
+                    // of it could execute, and what it referenced (bare `captures`,
+                    // `requestTimestamps`, `window.rpmLabels/rpmValues`, a Chart.js-style
+                    // `chart.update()` in clearRpmTimelineGraph) doesn't exist anywhere else
+                    // in this file - leftover from an earlier implementation. The server
+                    // side is already cleared by the DELETE above; reset the client-side
+                    // accumulated state that refreshAll() alone doesn't touch (it only adds
+                    // to chartCaptures/recentCaptureTimestampsById, never removes) instead of
+                    // forcing a full page reload just to get a consistent view.
                     state.page = 1;
+                    state.captures = [];
+                    state.chartCaptures = [];
+                    state.recentCaptureTimestampsById = {};
                     await refreshAll(1);
+                    renderChart();
                     toast('Stored captures cleared');
-
-                    window.location.href = window.location.pathname + '?t=' + Date.now();
-
-                    if (Array.isArray(captures)) captures.length = 0;
-                    if (Array.isArray(requestTimestamps)) requestTimestamps.length = 0;
-                    clearRpmTimelineGraph();
-                    if (Array.isArray(window.rpmLabels)) window.rpmLabels.length = 0;
-                    if (Array.isArray(window.rpmValues)) window.rpmValues.length = 0;
                 });
 
                 if (el['connect-btn'] && el['site-url-input']) {
@@ -2538,26 +2545,6 @@
                 });
             })();
         })();
-
-        // Add helper near other chart helpers.
-        function clearRpmTimelineGraph() {
-            // Support common chart variable names if already present.
-            const chart = window.requestsPerMinuteChart
-                || window.rpmTimelineChart
-                || window.requestsPerMinuteTimelineChart;
-
-            if (!chart || !chart.data) return;
-
-            chart.data.labels = [];
-
-            if (Array.isArray(chart.data.datasets)) {
-                chart.data.datasets.forEach(ds => {
-                    ds.data = [];
-                });
-            }
-
-            chart.update();
-        }
     </script>
 </body>
 </html>
