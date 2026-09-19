@@ -237,6 +237,58 @@ Legend: `[x]` done and merged into `staging` · `[ ]` not started · `[~]` parti
   red bar for its 500 status), and confirmed Escape closes the modal.
   Branch: `feature/trace-waterfall-view`
 
+- [x] **"Connect to site" was completely non-functional — 3 independent bugs
+  found and fixed**: requested as a UI review + explicit test of this
+  feature, which the user suspected was broken. Investigated live via
+  Playwright and confirmed all three, then fixed all three:
+  1. **Hidden by default everywhere except `footlook.co.za`** —
+     `shouldShowSiteConnector()` gated visibility to one production
+     hostname; the connect bar never appeared on `localhost` or any other
+     dev/staging host. Now always visible - the feature is for observing
+     your own frontend against your own FootLook-instrumented API in any
+     environment, not gated to a specific domain.
+  2. **`window.open(url, '_blank', 'noopener,noreferrer')` always returned
+     `null`** — per spec, passing `noopener` makes the return value `null`
+     regardless of whether the popup opened, so the success branch was
+     unreachable and every click showed a misleading "Check popup
+     permissions" toast even when the tab opened fine. Also silently broke
+     `startObservedTabMonitoring()`, which needs a real window reference to
+     detect the tab closing. Fixed by opening without `noopener` and
+     severing `openedTab.opener = null` manually afterward - same security
+     property, but the reference survives.
+  3. **Root scope mismatch (found during end-to-end testing, not in the
+     original report)**: even with the URL open correctly, FootLook scopes
+     all captures by a `footlook_scope_id` cookie, and a genuinely separate
+     frontend origin never sends that cookie on its own `fetch`/`XHR` calls
+     by default - so a "connected" session's captures landed in a scope the
+     dashboard could never query back, independent of any header tagging.
+  Also built the missing piece the feature always needed and never had:
+  **`footlook-connect.js`**, a small client snippet for the frontend being
+  observed (framework-agnostic: plain JS, React, Angular, anything) that
+  reads `footlookTabId`/`footlookSessionId` from the URL on load, persists
+  them in `sessionStorage` for the tab's lifetime, and patches `fetch`/`XHR`
+  to attach them as `X-Footlook-Session-Id`/`X-Footlook-Tab-Id` headers
+  (which `CaptureIdentityResolver` already read, but nothing ever set) plus
+  `credentials: 'include'`/`withCredentials` so the scope cookie travels
+  with same-site cross-origin calls, fixing bug 3. Scoped to a configurable
+  `apiBaseUrls` allowlist so it never tags calls to unrelated origins
+  (fonts, analytics, etc.). Added dev-only CORS to `FootLook.Demo` so a
+  separately-hosted frontend can be exercised at all
+  (`AllowCredentials()` + explicit origin reflection, not `AllowAnyOrigin`,
+  since credentialed requests require it).
+  Verified fully end-to-end via Playwright + a real second static frontend
+  served on a different origin/port: clicked Connect, confirmed the popup
+  opened with correct tab/session ids, confirmed the popup's own `fetch`
+  calls carried both headers *and* the scope cookie, confirmed captures
+  from before the connect click were correctly excluded from the observed
+  view while the two tagged calls after it were correctly included, and
+  confirmed closing the popup tab auto-disconnected the dashboard.
+  Important scope note (aligned with the user during the investigation):
+  this only ever works for *your own* frontend talking to *your own*
+  FootLook-instrumented API - not arbitrary third-party sites, which have
+  no way to know about FootLook or tag their own requests.
+  Branch: `feature/connect-site-session-tracking`
+
 ---
 
 ## Status: every actionable item from the original audit is closed
