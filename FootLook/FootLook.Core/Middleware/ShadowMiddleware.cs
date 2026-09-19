@@ -12,6 +12,7 @@ using FootLook.Core.Services;
 using System.Text.RegularExpressions;
 using System.Security.Cryptography;
 using System.Collections.Concurrent;
+using FootLook.Core.Security;
 
 #region FootLook Middleware Flow
 //The flow of the middleware can be visualized as follows:
@@ -47,6 +48,7 @@ namespace FootLook.Core.Middleware
         private readonly ILogger<ShadowMiddleware> _logger;
         private readonly CaptureRuntimeState _captureRuntimeState;
         private readonly PrivacyAuditStore _privacyAuditStore;
+        private readonly ObservationSessionStore _sessions;
 
         // ShadowMiddleware is constructed once for the app's lifetime (standard
         // UseMiddleware<T> convention), so these compiled regexes are built once per
@@ -54,7 +56,7 @@ namespace FootLook.Core.Middleware
         // instead of being rebuilt from scratch on every single capture.
         private readonly ConcurrentDictionary<string, (Regex Json, Regex Query)> _sensitiveFieldRegexCache = new(StringComparer.Ordinal);
 
-        public ShadowMiddleware(RequestDelegate next, IShadowQueue queue, FootLookOptions options, ILogger<ShadowMiddleware> logger, CaptureRuntimeState captureRuntimeState, PrivacyAuditStore privacyAuditStore)
+        public ShadowMiddleware(RequestDelegate next, IShadowQueue queue, FootLookOptions options, ILogger<ShadowMiddleware> logger, CaptureRuntimeState captureRuntimeState, PrivacyAuditStore privacyAuditStore, ObservationSessionStore sessions)
         {
             _next = next;
             _queue = queue;
@@ -62,6 +64,7 @@ namespace FootLook.Core.Middleware
             _logger = logger;
             _captureRuntimeState = captureRuntimeState;
             _privacyAuditStore = privacyAuditStore;
+            _sessions = sessions;
         }
 
         //public async Task InvokeAsync(HttpContext context)
@@ -190,8 +193,18 @@ namespace FootLook.Core.Middleware
 
         public async Task InvokeAsync(HttpContext context)
         {
-            var captureScopeId = GetOrCreateCaptureScopeId(context);
             if (!_captureRuntimeState.IsCaptureEnabled)
+            {
+                await _next(context);
+                return;
+            }
+
+            // Observation only exists while a developer is logged in to FootLook. With no
+            // active session nothing is recorded at all - not queued, not held back for
+            // later - so traffic from before anyone signed in (or after they signed out)
+            // never becomes visible to whoever logs in next.
+            var observerIds = _sessions.GetActiveUserIds();
+            if (observerIds.Count == 0)
             {
                 await _next(context);
                 return;
@@ -438,7 +451,7 @@ namespace FootLook.Core.Middleware
                             : "Endpoint threw before a response body was produced",
                         ClientIp = failureClientIp,
                         UserAgent = failureUserAgent,
-                        CaptureScopeId = captureScopeId,
+                        ObserverIds = new List<string>(observerIds),
                     };
 
                     await _queue.EnqueueAsync(failureCapturedRequest);
@@ -533,7 +546,7 @@ namespace FootLook.Core.Middleware
                     ResponseBodySkippedReason = responseBodySkippedReason,
                     ClientIp = anonymizedClientIp,
                     UserAgent = anonymizedUserAgent,
-                    CaptureScopeId = captureScopeId,
+                    ObserverIds = new List<string>(observerIds),
                 };
 
                 await _queue.EnqueueAsync(capturedRequest);
@@ -594,6 +607,17 @@ namespace FootLook.Core.Middleware
         {
             var path = context.Request.Path.Value ?? string.Empty;
 
+            // FootLook's own routes (login/register bodies carry passwords, /live is the
+            // dashboard's own stream) are never observation targets, whether or not the
+            // host remembered to list them in IgnoredPaths.
+            var ownPrefix = _options.EndpointBasePath.TrimEnd('/');
+            if (ownPrefix.Length > 0 &&
+                (string.Equals(path, ownPrefix, StringComparison.OrdinalIgnoreCase) ||
+                 path.StartsWith(ownPrefix + "/", StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+
             return _options.IgnoredPaths.Any(ignoredPath =>
             {
                 var candidate = (ignoredPath ?? string.Empty).Trim();
@@ -624,30 +648,6 @@ namespace FootLook.Core.Middleware
                 return string.Equals(path, candidate, StringComparison.OrdinalIgnoreCase)
                     || path.StartsWith(candidate + "/", StringComparison.OrdinalIgnoreCase);
             });
-        }
-
-        private static string GetOrCreateCaptureScopeId(HttpContext context)
-        {
-            const string cookieName = "footlook_scope_id";
-
-            if (context.Request.Cookies.TryGetValue(cookieName, out var existing)
-                && !string.IsNullOrWhiteSpace(existing))
-            {
-                return existing;
-            }
-
-            var scopeId = Guid.NewGuid().ToString("D");
-
-            context.Response.Cookies.Append(cookieName, scopeId, new CookieOptions
-            {
-                HttpOnly = true,
-                IsEssential = true,
-                SameSite = SameSiteMode.Lax,
-                Secure = context.Request.IsHttps,
-                Expires = DateTimeOffset.UtcNow.AddYears(1)
-            });
-
-            return scopeId;
         }
 
         private Dictionary<string, string> CaptureHeaders(HttpContext context, out int maskedCount)

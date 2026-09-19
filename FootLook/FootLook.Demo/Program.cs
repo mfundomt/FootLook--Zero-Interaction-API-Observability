@@ -13,8 +13,8 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(swagger =>
 {
     // Lets Swagger UI's Authorize button drive FootLook's own bearer-token auth: paste
-    // the token from POST /footlook/auth/token and every "Try it out" call on a
-    // FootLook endpoint carries it automatically.
+    // the token from POST /footlook/auth/login (or GET /footlook/auth/me) and every
+    // "Try it out" call on a FootLook endpoint carries it automatically.
     swagger.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
     {
         Name = "Authorization",
@@ -22,10 +22,10 @@ builder.Services.AddSwaggerGen(swagger =>
         Scheme = "bearer",
         BearerFormat = "JWT",
         In = Microsoft.OpenApi.Models.ParameterLocation.Header,
-        Description = "FootLook bearer token, obtained from POST /footlook/auth/token."
+        Description = "FootLook bearer token, obtained from POST /footlook/auth/login. Logging in also starts observation of this API."
     });
-    // Applied per-operation (not globally) so /footlook/health and /footlook/auth/token -
-    // the two routes that are genuinely unauthenticated - don't show a misleading padlock
+    // Applied per-operation (not globally) so /footlook/health, /footlook/auth/register and
+    // /footlook/auth/login - the routes that are genuinely unauthenticated - don't show a misleading padlock
     // in the UI for a requirement that was never actually enforced on them.
     swagger.OperationFilter<FootLookSwaggerSecurityFilter>();
 });
@@ -51,6 +51,12 @@ builder.Services.AddCors(cors =>
 });
 builder.Services.AddFootLookMongoRepository();
 
+// Microsoft (Entra ID) sign-in accounts live in Azure SQL. The connection string is a SECRET and is
+// never committed: set ConnectionStrings:FootLookAccounts via user-secrets locally, or the App Service
+// application setting ConnectionStrings__FootLookAccounts. Without it the host still starts and
+// POST /footlook/auth/microsoft answers 503 accounts_unavailable.
+builder.Services.AddFootLookSqlAccounts(builder.Configuration);
+
 
 builder.Services.AddFootLook(options =>
 {
@@ -73,6 +79,7 @@ builder.Services.AddFootLook(options =>
     // list meant to grow per-environment without a redeploy.
     options.IgnoredPaths.Add("/footlook");
     options.IgnoredPaths.Add("/footlook.html");
+    options.IgnoredPaths.Add("/footlook-login.html");
     options.IgnoredPaths.Add("/footlook-connect.js");
     options.IgnoredPaths.Add("/");
     options.IgnoredPaths.Add("/footlook/pause");
@@ -103,18 +110,10 @@ builder.Services.AddFootLook(options =>
     }
 //  options.AllowedMethods.Add("DELETE");
 
-    // Dev-only default login credentials so the bundled demo/dashboard works out of
-    // the box - exchange one at POST /footlook/auth/token for a bearer token. A real
-    // deployment should set FootLook:ApiKeys via configuration/user-secrets/
-    // environment variables instead of hardcoding credentials in source.
-    var configuredKeys = builder.Configuration.GetSection("FootLook:ApiKeys").Get<List<FootLookApiKey>>();
-    options.ApiKeys = configuredKeys is { Count: > 0 }
-        ? configuredKeys
-        : new List<FootLookApiKey>
-        {
-            new("footlook-dev-key", IsAdmin: false, Label: "demo-default"),
-            new("footlook-dev-admin-key", IsAdmin: true, Label: "demo-default-admin"),
-        };
+    // No credentials are configured here: developers create an account with
+    // POST /footlook/auth/register and log in with POST /footlook/auth/login, and that
+    // login is what turns observation on. The first account registered is the admin.
+    // Set FootLook:AllowRegistration=false once your accounts exist to close sign-up.
 });
 
 // TODO: Add MongoDB repository registration here if needed
@@ -252,7 +251,7 @@ public class TestRequest
 
 /// <summary>
 /// Marks Swagger operations as requiring the Bearer scheme, but only the ones FootLook
-/// itself actually protects (paths under /footlook, minus the two genuinely
+/// itself actually protects (paths under /footlook, minus the genuinely
 /// unauthenticated routes) - this demo's own business endpoints (/, /test2, /slow,
 /// /error) were never behind FootLook's auth and must not show a padlock either, or the
 /// Swagger doc would claim a requirement that isn't real in either direction.
@@ -264,7 +263,9 @@ public class FootLookSwaggerSecurityFilter : Swashbuckle.AspNetCore.SwaggerGen.I
     private static readonly string[] ExemptRelativePaths =
     {
         "footlook/health",
-        "footlook/auth/token"
+        "footlook/auth/register",
+        "footlook/auth/login",
+        "footlook/auth/microsoft"
     };
 
     public void Apply(Microsoft.OpenApi.Models.OpenApiOperation operation, Swashbuckle.AspNetCore.SwaggerGen.OperationFilterContext context)

@@ -121,24 +121,21 @@ namespace FootLook.Core.Options
         public bool UseMongoSink { get; set; } = false;
 
         /// <summary>
-        /// When true (the default), every /footlook/* endpoint except /health and
-        /// /auth/token requires a valid FootLook bearer token, obtained by exchanging one
-        /// of <see cref="ApiKeys"/> at POST {EndpointBasePath}/auth/token. This is on by
-        /// default because FootLook observes and can expose live production traffic - it
-        /// should not be reachable by anyone who can route to the host. Set to false only
-        /// for local/throwaway setups where the host is not reachable by anyone untrusted.
+        /// Whether POST {EndpointBasePath}/auth/register accepts new accounts. Every FootLook
+        /// endpoint except /health, /auth/register and /auth/login needs a bearer token from
+        /// an account, and observation only runs while an account is logged in - so once the
+        /// accounts you want exist, set this to false to stop anyone else from creating one.
+        /// The first account registered on an instance is its admin (it may pause/resume
+        /// capture for everyone, clear the privacy audit log, run self-heal/setup).
         /// </summary>
-        public bool RequireAuthentication { get; set; } = true;
+        public bool AllowRegistration { get; set; } = true;
 
         /// <summary>
-        /// Login credentials exchangeable for a bearer token at {EndpointBasePath}/auth/token.
-        /// A credential with IsAdmin=false yields a token that can read/clear only its own
-        /// capture scope; IsAdmin=true is required for a token that can perform actions
-        /// affecting every caller at once (pause/resume capture, clearing the privacy audit
-        /// log, self-heal, setup profiles), since those are host-wide, not per-caller.
-        /// These credentials are only ever sent once, at login - never on every request.
+        /// Where the default account store keeps accounts (password hashes included). Empty
+        /// means "footlook-users.json" next to the host's binaries. Ignored if you register
+        /// your own IFootLookUserStore.
         /// </summary>
-        public List<FootLookApiKey> ApiKeys { get; set; } = new();
+        public string UserStorePath { get; set; } = string.Empty;
 
         /// <summary>
         /// Symmetric key (HMAC-SHA256) FootLook signs and validates bearer tokens with. If
@@ -151,17 +148,53 @@ namespace FootLook.Core.Options
         public string TokenSigningKey { get; set; } = string.Empty;
 
         /// <summary>
-        /// How long an issued bearer token remains valid before the caller must log in
-        /// again via {EndpointBasePath}/auth/token.
+        /// How long an issued bearer token - and the observation session it opened - stays
+        /// valid before the developer must log in again via {EndpointBasePath}/auth/login.
         /// </summary>
         public double TokenLifetimeHours { get; set; } = 8;
 
         /// <summary>
         /// Query string parameter the live SignalR hub accepts a bearer token on, since
         /// browsers cannot attach custom headers to a WebSocket upgrade request. Example:
-        /// /footlook/live?footlook_token=... . Only used when RequireAuthentication is true.
+        /// /footlook/live?footlook_token=... .
         /// </summary>
         public string TokenQueryParameterName { get; set; } = "footlook_token";
+
+        /// <summary>
+        /// Sign in with Microsoft (Entra ID): POST {EndpointBasePath}/auth/microsoft. See
+        /// <see cref="FootLookMicrosoftOptions"/>. Accounts are only persisted when a host
+        /// registers an <see cref="Security.IFootLookMicrosoftAccountStore"/> (FootLook.Data's
+        /// AddFootLookSqlAccounts); without one the endpoint answers 503 accounts_unavailable.
+        /// </summary>
+        public FootLookMicrosoftOptions Microsoft { get; set; } = new();
+    }
+
+    /// <summary>Settings for validating Microsoft (Entra ID) ID tokens. Bound from FootLook:Microsoft.</summary>
+    public class FootLookMicrosoftOptions
+    {
+        /// <summary>
+        /// Application (client) ID of the "FootLook Sign-In" app registration. ID tokens whose
+        /// audience is not this value are rejected. It is a public identifier, not a secret.
+        /// </summary>
+        public string ClientId { get; set; } = "264de9b0-15e7-4887-b686-5b6c18a2f376";
+
+        /// <summary>
+        /// OpenID Connect metadata document the signing keys are read from. "common" serves
+        /// both work/school and personal accounts; the issuer in it is a template, which
+        /// the validator resolves per token from the token's own tid claim.
+        /// </summary>
+        public string MetadataAddress { get; set; } = "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration";
+
+        /// <summary>Tolerated clock difference when checking exp/nbf/iat.</summary>
+        public int ClockSkewSeconds { get; set; } = 60;
+
+        /// <summary>
+        /// How old (per its iat claim) an ID token may be when it is presented, in minutes.
+        /// The SPA signs in interactively and posts the token straight away, so a short
+        /// window narrows how long a leaked token could be replayed (ID tokens otherwise
+        /// stay valid for about an hour). 0 disables the check and leaves only exp.
+        /// </summary>
+        public int MaxIdTokenAgeMinutes { get; set; } = 10;
     }
 
 }

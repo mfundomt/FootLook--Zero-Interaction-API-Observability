@@ -2,41 +2,51 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using FootLook.Core.Models;
 using FootLook.Core.Options;
 using Microsoft.IdentityModel.Tokens;
 
 namespace FootLook.Core.Security
 {
     /// <summary>
-    /// Issues and signs the bearer tokens returned by POST {EndpointBasePath}/auth/token.
+    /// Issues and signs the bearer tokens returned by POST {EndpointBasePath}/auth/login.
     /// Validation of tokens on incoming requests is handled separately by the JwtBearer
     /// authentication handler (registered in FootLookServiceCollectionExtensions), which is
     /// given the same signing key via <see cref="SigningKey"/> so the two stay consistent.
+    /// Issuing a token also starts the account's observation session - the two are one step,
+    /// so there is no way to hold a valid token whose session was never opened.
     /// </summary>
     public class FootLookTokenService
     {
         private readonly FootLookOptions _options;
+        private readonly ObservationSessionStore _sessions;
         private readonly SymmetricSecurityKey _signingKey;
 
-        public FootLookTokenService(FootLookOptions options)
+        public FootLookTokenService(FootLookOptions options, ObservationSessionStore sessions)
         {
             _options = options;
+            _sessions = sessions;
             _signingKey = new SymmetricSecurityKey(ResolveSigningKeyBytes(options));
         }
 
         public SymmetricSecurityKey SigningKey => _signingKey;
 
-        public (string Token, DateTime ExpiresAtUtc) IssueToken(FootLookApiKey credential)
+        public (string Token, DateTime ExpiresAtUtc, ObservationSession Session) IssueToken(FootLookUser user)
         {
             var now = DateTime.UtcNow;
             var lifetimeHours = _options.TokenLifetimeHours > 0 ? _options.TokenLifetimeHours : 8;
             var expires = now.AddHours(lifetimeHours);
 
+            var session = _sessions.Start(user.Id, expires);
+
             var claims = new List<Claim>
             {
-                new(JwtRegisteredClaimNames.Sub, string.IsNullOrWhiteSpace(credential.Label) ? "footlook" : credential.Label),
-                new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("N")),
-                new(FootLookAuthDefaults.AdminClaimType, credential.IsAdmin ? "true" : "false"),
+                new(JwtRegisteredClaimNames.Sub, user.Id),
+                new(JwtRegisteredClaimNames.Email, user.Email),
+                new(JwtRegisteredClaimNames.Name, user.DisplayName),
+                new(JwtRegisteredClaimNames.Jti, session.SessionId),
+                new(FootLookAuthDefaults.SessionIdClaimType, session.SessionId),
+                new(FootLookAuthDefaults.AdminClaimType, user.IsAdmin ? "true" : "false"),
             };
 
             var token = new JwtSecurityToken(
@@ -47,7 +57,7 @@ namespace FootLook.Core.Security
                 expires: expires,
                 signingCredentials: new SigningCredentials(_signingKey, SecurityAlgorithms.HmacSha256));
 
-            return (new JwtSecurityTokenHandler().WriteToken(token), expires);
+            return (new JwtSecurityTokenHandler().WriteToken(token), expires, session);
         }
 
         private static byte[] ResolveSigningKeyBytes(FootLookOptions options)

@@ -14,10 +14,10 @@ namespace FootLook.Core.Interfaces
         CapturedRequest? GetById(Guid id);
 
         /// <summary>
-        /// Clears captures belonging to the given capture scope only. A null/empty
-        /// scopeId is treated as "no active scope" and clears nothing, to avoid an
-        /// unauthenticated caller wiping every tenant's captures at once.
+        /// Removes the given account from every capture's observers, deleting captures
+        /// nobody else is observing. Another account that was observing the same traffic
+        /// keeps its copy. A null/empty userId clears nothing.
         /// </summary>
-        void Clear(string? scopeId);
+        void Clear(string? userId);
     }
 }

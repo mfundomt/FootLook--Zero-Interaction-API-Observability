@@ -2,6 +2,7 @@
 using FootLook.Core.Services;
 using FootLook.Core.Queue;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -69,7 +70,15 @@ namespace FootLook.Core.Extensions
             // Register the ShadowBackgroundWorker as a hosted service, which will run in the background and process captured requests from the queue.
             services.AddHostedService<ShadowBackgroundWorker>();
 
+            // TryAdd so a host can register its own account store before AddFootLook.
+            services.TryAddSingleton<IFootLookUserStore, JsonFileUserStore>();
+            services.AddSingleton<ObservationSessionStore>();
             services.AddSingleton<FootLookTokenService>();
+            // Validates Microsoft (Entra ID) ID tokens for POST {EndpointBasePath}/auth/microsoft. TryAdd so a
+            // host (or a test) can supply its own, e.g. with different key retrieval.
+            services.TryAddSingleton(provider => new MicrosoftIdTokenValidator(
+                provider.GetRequiredService<FootLookOptions>().Microsoft,
+                provider.GetService<Microsoft.Extensions.Logging.ILogger<MicrosoftIdTokenValidator>>()));
 
             // A named scheme (not the default) so registering FootLook auth never changes
             // an app's own default authentication behavior if it already has one.
@@ -80,7 +89,7 @@ namespace FootLook.Core.Extensions
             // available yet when AddJwtBearer's own configure delegate runs above - this
             // named-options + DI form runs once the container can resolve it.
             services.AddOptions<JwtBearerOptions>(FootLookAuthDefaults.SchemeName)
-                .Configure<FootLookTokenService, FootLookOptions>((jwtOptions, tokenService, footLookOptions) =>
+                .Configure<FootLookTokenService, FootLookOptions, ObservationSessionStore>((jwtOptions, tokenService, footLookOptions, sessions) =>
                 {
                     jwtOptions.TokenValidationParameters = new TokenValidationParameters
                     {
@@ -108,6 +117,20 @@ namespace FootLook.Core.Extensions
                                 context.HttpContext.Request.Path.StartsWithSegments(hubPath, StringComparison.OrdinalIgnoreCase))
                             {
                                 context.Token = token;
+                            }
+
+                            return Task.CompletedTask;
+                        },
+                        // A correctly signed, unexpired token is not enough: its observation
+                        // session must still be open. Logging out (or a host restart) ends the
+                        // session, and that has to invalidate the token immediately rather
+                        // than leaving it usable until it expires on its own.
+                        OnTokenValidated = context =>
+                        {
+                            var sessionId = context.Principal?.GetSessionId();
+                            if (!sessions.IsActive(sessionId))
+                            {
+                                context.Fail("The FootLook session has ended.");
                             }
 
                             return Task.CompletedTask;

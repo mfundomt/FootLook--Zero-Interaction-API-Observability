@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
 namespace FootLook.Core.Models
@@ -70,7 +71,14 @@ namespace FootLook.Core.Models
 
         public string? ClientIp { get; init; }  
 
-        public string? CaptureScopeId { get; init; }
+        /// <summary>
+        /// Ids of the accounts whose observation session was active when this request was
+        /// captured - and therefore the only accounts allowed to read it. Never serialized
+        /// (REST, SignalR or the capture file): it would leak other developers' account ids
+        /// to every observer of the same traffic.
+        /// </summary>
+        [JsonIgnore]
+        public List<string> ObserverIds { get; init; } = new();
 
     }
 }

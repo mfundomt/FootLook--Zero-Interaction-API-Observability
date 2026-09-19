@@ -79,22 +79,31 @@ namespace FootLook.Core.Interfaces
             return _request.ToList();
         }
 
-        public void Clear(string? scopeId)
+        public void Clear(string? userId)
         {
-            if (string.IsNullOrWhiteSpace(scopeId))
+            if (string.IsNullOrWhiteSpace(userId))
             {
-                // No active browser scope -> do not perform a global wipe.
+                // No account -> do not perform a global wipe.
                 return;
             }
 
-            // ConcurrentQueue has no in-place filtered removal, so drain everything
-            // and re-enqueue whatever doesn't belong to the caller's scope.
+            // ConcurrentQueue has no in-place filtered removal, so drain everything and
+            // re-enqueue what's left. A capture other accounts were also observing survives
+            // with this account removed from its observers; one only this account could see
+            // is dropped.
             var retained = new List<CapturedRequest>();
             while (_request.TryDequeue(out var captured))
             {
-                if (!string.Equals(captured.CaptureScopeId, scopeId, StringComparison.Ordinal))
+                if (!captured.ObserverIds.Contains(userId, StringComparer.Ordinal))
                 {
                     retained.Add(captured);
+                    continue;
+                }
+
+                var remaining = captured.ObserverIds.Where(id => !string.Equals(id, userId, StringComparison.Ordinal)).ToList();
+                if (remaining.Count > 0)
+                {
+                    retained.Add(captured with { ObserverIds = remaining });
                 }
             }
 

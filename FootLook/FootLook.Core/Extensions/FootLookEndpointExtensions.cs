@@ -1,3 +1,4 @@
+using System.Net.Mail;
 using FootLook.Core.Interfaces;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -7,38 +8,42 @@ using FootLook.Core.Models;
 using FootLook.Core.Services;
 using FootLook.Core.Security;
 using FootLook.Core.Hubs;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace FootLook.Core.Extensions
 {
     public static class FootLookEndpointExtensions
     {
-        private const string ScopeCookieName = "footlook_scope_id";
+        private const int MinPasswordLength = 8;
+        // PBKDF2 cost grows with input length, so an unbounded password is a cheap way to
+        // burn server CPU on an endpoint that is reachable without logging in.
+        private const int MaxPasswordLength = 128;
 
         /// <summary>
-        /// Resolves the caller's capture scope from the <c>footlook_scope_id</c> cookie,
-        /// minting and setting one if the caller doesn't have it yet. Every endpoint that
-        /// reads or deletes captures must go through this so scope enforcement can't be
-        /// forgotten on a new route.
+        /// The logged-in account's id. Every endpoint that reads or deletes captures must go
+        /// through this (and filter on <see cref="IsObservedBy"/>) so per-account isolation
+        /// can't be forgotten on a new route. The routes are all behind the user policy, so
+        /// an empty id here only happens if that wiring is broken - and then it matches no
+        /// capture rather than all of them.
         /// </summary>
-        private static string ResolveScopeId(HttpContext httpContext)
+        private static string GetUserId(HttpContext httpContext) =>
+            httpContext.User.GetUserId() ?? string.Empty;
+
+        private static bool IsObservedBy(CapturedRequest capture, string userId) =>
+            userId.Length > 0 && capture.ObserverIds.Contains(userId, StringComparer.Ordinal);
+
+        private static string? ValidateEmail(string? email)
         {
-            var scopeId = httpContext.Request.Cookies[ScopeCookieName];
-            if (!string.IsNullOrWhiteSpace(scopeId))
+            var trimmed = email?.Trim();
+            if (string.IsNullOrEmpty(trimmed) || trimmed.Length > 254 ||
+                !MailAddress.TryCreate(trimmed, out var parsed) ||
+                !string.Equals(parsed.Address, trimmed, StringComparison.OrdinalIgnoreCase) ||
+                !parsed.Host.Contains('.'))
             {
-                return scopeId;
+                return null;
             }
 
-            scopeId = Guid.NewGuid().ToString("D");
-            httpContext.Response.Cookies.Append(ScopeCookieName, scopeId, new CookieOptions
-            {
-                HttpOnly = true,
-                IsEssential = true,
-                SameSite = SameSiteMode.Lax,
-                Secure = httpContext.Request.IsHttps,
-                Expires = DateTimeOffset.UtcNow.AddYears(1)
-            });
-
-            return scopeId;
+            return trimmed.ToLowerInvariant();
         }
 
         public static IEndpointRouteBuilder MapFootLookEndpoints(this IEndpointRouteBuilder endpoints, FootLookOptions options)
@@ -62,38 +67,124 @@ namespace FootLook.Core.Extensions
                 });
             });
 
-            // The only route that ever sees a raw API key - exchanges it for a short-lived
-            // bearer token. Also unauthenticated by definition: you can't require a token to
-            // obtain a token.
-            endpoints.MapPost($"{prefix}/auth/token", (FootLookOptions options, FootLookTokenService tokenService, FootLookLoginRequest? request) =>
+            // register and login are the only routes reachable without a token - you can't
+            // require a token to obtain one. Registration creates an account but deliberately
+            // does not log it in: login is the step that opens an observation session.
+            endpoints.MapPost($"{prefix}/auth/register", (FootLookOptions options, IFootLookUserStore users, FootLookRegisterRequest? request) =>
             {
-                if (!options.RequireAuthentication)
+                if (!options.AllowRegistration)
                 {
-                    return Results.BadRequest(new { message = "Authentication is disabled on this FootLook instance (RequireAuthentication=false)." });
+                    return Results.Json(new { message = "Registration is closed on this FootLook instance." }, statusCode: StatusCodes.Status403Forbidden);
                 }
 
-                var matched = FootLookApiKeyMatcher.Match(options, request?.ApiKey);
-                if (matched is null)
+                var email = ValidateEmail(request?.Email);
+                if (email is null)
                 {
-                    return Results.Json(new { message = "Invalid API key." }, statusCode: StatusCodes.Status401Unauthorized);
+                    return Results.BadRequest(new { message = "Enter a valid email address." });
                 }
 
-                var (token, expiresAtUtc) = tokenService.IssueToken(matched);
-                return Results.Ok(new { token, expiresAtUtc, isAdmin = matched.IsAdmin });
+                var password = request?.Password ?? string.Empty;
+                if (password.Length < MinPasswordLength || password.Length > MaxPasswordLength)
+                {
+                    return Results.BadRequest(new { message = $"Password must be {MinPasswordLength}-{MaxPasswordLength} characters." });
+                }
+
+                var displayName = request?.DisplayName?.Trim();
+                if (string.IsNullOrEmpty(displayName))
+                {
+                    displayName = email[..email.IndexOf('@')];
+                }
+                else if (displayName.Length > 100)
+                {
+                    return Results.BadRequest(new { message = "Display name must be 100 characters or fewer." });
+                }
+
+                var user = users.TryCreate(email, displayName, FootLookPasswordHasher.Hash(password));
+                if (user is null)
+                {
+                    return Results.Conflict(new { message = "An account with that email already exists." });
+                }
+
+                return Results.Created($"{prefix}/auth/me", FootLookUserSummary.From(user));
             });
 
-            // Everything else requires a valid bearer token (obtained above). Reads/writes
-            // that only affect the caller's own capture scope live in `group`; actions that
-            // affect every caller at once (pause/resume, privacy-audit clear, self-heal/
-            // setup) live in `adminGroup` and additionally require an admin-flagged token.
-            var group = endpoints.MapGroup(prefix);
-            var adminGroup = endpoints.MapGroup(prefix);
-
-            if (options.RequireAuthentication)
+            // Generates the bearer token and, in the same step, opens the account's
+            // observation session - capture stays off until somebody has logged in.
+            endpoints.MapPost($"{prefix}/auth/login", (IFootLookUserStore users, FootLookTokenService tokenService, FootLookLoginRequest? request) =>
             {
-                group.RequireAuthorization(FootLookAuthDefaults.UserPolicy);
-                adminGroup.RequireAuthorization(FootLookAuthDefaults.AdminPolicy);
-            }
+                var email = request?.Email?.Trim() ?? string.Empty;
+                var password = request?.Password ?? string.Empty;
+                var user = email.Length > 0 && password.Length <= MaxPasswordLength ? users.FindByEmail(email) : null;
+
+                if (user is null)
+                {
+                    FootLookPasswordHasher.BurnVerifyTime(password.Length <= MaxPasswordLength ? password : string.Empty);
+                }
+
+                // One message for "no such account" and "wrong password" so the response
+                // doesn't reveal which emails are registered.
+                if (user is null || !FootLookPasswordHasher.Verify(password, user.PasswordHash))
+                {
+                    return Results.Json(new { message = "Invalid email or password." }, statusCode: StatusCodes.Status401Unauthorized);
+                }
+
+                var (token, expiresAtUtc, _) = tokenService.IssueToken(user);
+                return Results.Ok(new { token, expiresAtUtc, user = FootLookUserSummary.From(user) });
+            });
+
+            // Sign in with Microsoft (Entra ID): the third unauthenticated route, see FootLookMicrosoftEndpoint.
+            endpoints.MapFootLookMicrosoftSignIn(prefix);
+
+            // Everything else requires a valid bearer token (obtained above) whose
+            // observation session is still open. Reads/writes that only affect the caller's
+            // own captures live in `group`; actions that affect every caller at once
+            // (pause/resume, privacy-audit clear, self-heal/setup) live in `adminGroup` and
+            // additionally require an admin token.
+            var group = endpoints.MapGroup(prefix).RequireAuthorization(FootLookAuthDefaults.UserPolicy);
+            var adminGroup = endpoints.MapGroup(prefix).RequireAuthorization(FootLookAuthDefaults.AdminPolicy);
+
+            // The logged-in developer's details, plus the JWT this request was made with, so
+            // it can be copied straight into Swagger's Authorize box (or any client's
+            // Authorization: Bearer header).
+            group.MapGet("/auth/me", async (HttpContext httpContext, IFootLookUserStore users, ObservationSessionStore sessions) =>
+            {
+                var userId = GetUserId(httpContext);
+                // Accounts that signed in with Microsoft live in their own store (see IFootLookMicrosoftAccountStore).
+                var user = users.FindById(userId)
+                    ?? (userId.Length > 0 && httpContext.RequestServices.GetService<IFootLookMicrosoftAccountStore>() is { } microsoftAccounts
+                        ? await microsoftAccounts.FindByIdAsync(userId, httpContext.RequestAborted)
+                        : null);
+                var session = sessions.Get(httpContext.User.GetSessionId());
+                if (user is null || session is null)
+                {
+                    return Results.Json(new { message = "Authentication required" }, statusCode: StatusCodes.Status401Unauthorized);
+                }
+
+                var authorization = httpContext.Request.Headers.Authorization.ToString();
+                var token = authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                    ? authorization["Bearer ".Length..].Trim()
+                    // The SignalR hub isn't this route, but a client that authenticated via
+                    // the query string (the only other accepted form) still gets its token back.
+                    : httpContext.Request.Query["footlook_token"].ToString();
+
+                return Results.Ok(new
+                {
+                    user = FootLookUserSummary.From(user),
+                    token,
+                    tokenExpiresAtUtc = session.ExpiresAtUtc,
+                    sessionId = session.SessionId,
+                    sessionStartedAtUtc = session.StartedAtUtc,
+                    observationActive = true
+                });
+            });
+
+            // Ends this login's observation session. The token stops validating immediately,
+            // and if no other account is logged in, capture stops.
+            group.MapPost("/auth/logout", (HttpContext httpContext, ObservationSessionStore sessions) =>
+            {
+                sessions.End(httpContext.User.GetSessionId());
+                return Results.Ok(new { message = "Signed out. Observation session ended." });
+            });
 
             group.MapGet("/dashboard/ops", (FootLookOptions options, CaptureReliabilityState reliabilityState, PrivacyAuditStore privacyAuditStore) =>
             {
@@ -179,9 +270,9 @@ namespace FootLook.Core.Extensions
               string? correlationId = null, string sortBy = "timestamp", string sortDirection = "desc", bool failedOnly = false, string? pathContains = null) =>
             {
                 var captures = store.GetAll().AsEnumerable();
-                var scopeId = ResolveScopeId(httpContext);
+                var userId = GetUserId(httpContext);
 
-                captures = captures.Where(c => c.CaptureScopeId == scopeId);
+                captures = captures.Where(c => IsObservedBy(c, userId));
 
                 if (failedOnly)
                 {
@@ -251,9 +342,9 @@ namespace FootLook.Core.Extensions
             group.MapGet("/captures/stats",
             (HttpContext httpContext, IShadowCaptureStore store) =>
             {
-                var scopeId = ResolveScopeId(httpContext);
+                var userId = GetUserId(httpContext);
                 var captures = store.GetAll()
-                    .Where(c => c.CaptureScopeId == scopeId)
+                    .Where(c => IsObservedBy(c, userId))
                     .ToList();
 
                 var totalRequests = captures.Count;
@@ -328,10 +419,10 @@ namespace FootLook.Core.Extensions
                    double minConfidence = 0.65,
                    string? siteHost = null) =>
             {
-                var scopeId = ResolveScopeId(httpContext);
+                var userId = GetUserId(httpContext);
                 var orderedCaptures = store
                     .GetAll()
-                    .Where(c => c.CaptureScopeId == scopeId)
+                    .Where(c => IsObservedBy(c, userId))
                     .OrderByDescending(c => c.TimestampUtc)
                     .ToList();
                 var totalEvaluated = orderedCaptures.Count;
@@ -443,14 +534,14 @@ namespace FootLook.Core.Extensions
                     return Results.BadRequest("footlookSessionId and footlookTabId are required.");
                 }
 
-                var scopeId = ResolveScopeId(httpContext);
+                var userId = GetUserId(httpContext);
                 var threshold = Math.Clamp(minConfidence, 0.0, 1.0);
                 var currentPage = Math.Max(1, page);
                 var size = Math.Clamp(pageSize, 1, 100);
 
                 var scored = store
                     .GetAll()
-                    .Where(c => c.CaptureScopeId == scopeId)
+                    .Where(c => IsObservedBy(c, userId))
                     .OrderByDescending(c => c.TimestampUtc)
                     .Select(c =>
                     {
@@ -485,20 +576,19 @@ namespace FootLook.Core.Extensions
                 "/captures/{id:guid}",
                 (HttpContext httpContext, IShadowCaptureStore store, Guid id) =>
                 {
-                    var scopeId = ResolveScopeId(httpContext);
+                    var userId = GetUserId(httpContext);
                     var capture = store.GetById(id);
 
-                    // Scope mismatch is reported the same as "not found" so a caller can't
-                    // use this route to probe for the existence of another scope's captures.
-                    return capture is not null && capture.CaptureScopeId == scopeId
+                    // Not-observed-by-you is reported the same as "not found" so a caller can't
+                    // use this route to probe for the existence of another account's captures.
+                    return capture is not null && IsObservedBy(capture, userId)
             ? Results.Ok(capture)
             : Results.NotFound();
                 });
 
             group.MapDelete("/captures", (HttpContext httpContext, IShadowCaptureStore store) =>
             {
-                var scopeId = ResolveScopeId(httpContext);
-                store.Clear(scopeId);
+                store.Clear(GetUserId(httpContext));
                 return Results.Ok(new
                 {
                     MessageProcessingHandler = "FootLook captures cleared."
@@ -515,10 +605,10 @@ namespace FootLook.Core.Extensions
                     return Results.BadRequest("count must be greater than zero.");
                 }
 
-                var scopeId = ResolveScopeId(httpContext);
+                var userId = GetUserId(httpContext);
                 var captures = store
                     .GetAll()
-                    .Where(c => c.CaptureScopeId == scopeId)
+                    .Where(c => IsObservedBy(c, userId))
                     .OrderByDescending(c => c.TimestampUtc)
                     .Take(count)
                     .ToList();
@@ -639,11 +729,8 @@ namespace FootLook.Core.Extensions
             // Mapped here rather than left to the host so its auth requirement can never
             // drift from the REST endpoints above - previously the demo mapped this itself
             // with a hardcoded path that happened to match EndpointBasePath by coincidence.
-            var hubBuilder = endpoints.MapHub<CaptureHub>($"{prefix}/live");
-            if (options.RequireAuthentication)
-            {
-                hubBuilder.RequireAuthorization(FootLookAuthDefaults.UserPolicy);
-            }
+            endpoints.MapHub<CaptureHub>($"{prefix}/live")
+                .RequireAuthorization(FootLookAuthDefaults.UserPolicy);
 
             return endpoints;
         }

@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\FootLook.Core\FootLook.Core.csproj" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
   </ItemGroup>
 
   <ItemGroup>
