@@ -29,7 +29,9 @@ namespace FootLook.Data.Accounts;
 /// </summary>
 public sealed class SqlFootLookAccountStore : IFootLookMicrosoftAccountStore
 {
-    private const int MaxTransientAttempts = 4;
+    // Sized for a serverless database resuming from a pause (up to ~2 minutes in practice), while
+    // keeping the worst case under App Service's 230 s request limit.
+    private const int MaxTransientAttempts = 6;
     private const int MaxDuplicateKeyRetries = 3;
     private const int IpAddressLength = 64;
     private const int UserAgentLength = 400;
@@ -46,6 +48,7 @@ public sealed class SqlFootLookAccountStore : IFootLookMicrosoftAccountStore
     private static readonly TimeSpan[] RetryDelays =
     {
         TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10),
+        TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(20),
     };
 
     private readonly string _connectionString;
