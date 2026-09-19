@@ -131,6 +131,24 @@ builder.Services.AddFootLook(options =>
 	options.IgnoredPaths.Add("/favicon.ico");
 	options.IgnoredPaths.Add("/.well-known");
 
+	// A path ending in "*" is a wildcard prefix match (e.g. "/robots*" also
+	// catches "/robots.txt" and scanner variants like "/robots933456.txt");
+	// without it, "/robots" only ever matches the exact path "/robots" or
+	// "/robots/..." - not "/robots.txt". Recommended baseline for any
+	// internet-facing deployment, to keep bot/crawler/scanner noise out of
+	// your captures:
+	options.IgnoredPaths.Add("/robots*");
+	options.IgnoredPaths.Add("/sitemap*");
+	options.IgnoredPaths.Add("/ads.txt");
+	options.IgnoredPaths.Add("/humans.txt");
+	options.IgnoredPaths.Add("/security.txt");
+	options.IgnoredPaths.Add("/browserconfig.xml");
+	options.IgnoredPaths.Add("/apple-touch-icon*");
+	options.IgnoredPaths.Add("/xmlrpc.php");
+	options.IgnoredPaths.Add("/wp-");   // wp-login.php, wp-admin, wp-content...
+	options.IgnoredPaths.Add("/.git");
+	options.IgnoredPaths.Add("/.env");
+
 	// HTTP methods FootLook will capture (not related to CORS - this filters which
 	// requests get observed, it does not affect cross-origin browser permissions)
 	options.AllowedMethods.Add("GET");

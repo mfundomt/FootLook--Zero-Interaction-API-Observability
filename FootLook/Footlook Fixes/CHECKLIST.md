@@ -289,6 +289,39 @@ Legend: `[x]` done and merged into `staging` · `[ ]` not started · `[~]` parti
   no way to know about FootLook or tag their own requests.
   Branch: `feature/connect-site-session-tracking`
 
+- [x] **Production noise (bot/crawler/scanner requests) polluting captures**:
+  requested after running FootLook against real production traffic on
+  `www.footlook.co.za` and seeing endpoints show up that were never
+  intentionally exposed - crawler/scanner probes like `/robots.txt`,
+  `/sitemap.xml`, `/ads.txt`, `/apple-touch-icon.png`, `/xmlrpc.php`. Found
+  a real bug while fixing this: `Program.cs` already had
+  `IgnoredPaths.Add("/robots")`, but `ShadowMiddleware.ShouldIgnorePath`
+  only matches a bare entry exactly or as a `/segment/...` prefix - it
+  never matched `/robots.txt`, so that ignore rule had silently never
+  worked. `IgnoredPaths` does support a trailing `*` for a true prefix
+  match (e.g. `/robots*`), which was already used correctly elsewhere but
+  not here.
+  Fixed by replacing the broken exact-match entry with a proper noise
+  bundle in `appsettings.json`'s `FootLook:IgnoredPathPrefixes` (the
+  config-driven, no-redeploy-needed list already wired up in `Program.cs`
+  for exactly this purpose): `/robots*`, `/sitemap*`, `/ads.txt`,
+  `/app-ads.txt`, `/humans.txt`, `/security.txt`, `/browserconfig.xml`,
+  `/apple-touch-icon*`, `/xmlrpc.php`. Also added `/footlook-connect.js` to
+  `Program.cs`'s own `IgnoredPaths` (the connect snippet's own file request
+  is infra, not app traffic) - a drive-by miss from the previous branch.
+  Documented the same recommended baseline in `README.NuGet.md` so any
+  other FootLook consumer hits this less than we did - `IgnoredPaths`
+  defaults to empty by design (the library doesn't guess what a host app
+  wants ignored), so every deployment needs to opt into this itself.
+  Verified live: fired 12 scanner/crawler-style requests
+  (`/robots.txt`, `/robots933456.txt`, `/sitemap.xml`, `/ads.txt`,
+  `/app-ads.txt`, `/humans.txt`, `/security.txt`, `/browserconfig.xml`,
+  `/apple-touch-icon.png`, `/apple-touch-icon-precomposed.png`,
+  `/xmlrpc.php`, `/wp-login.php`) alongside one real business call;
+  `/footlook/captures/recent` showed only the real call - all 12 were
+  correctly excluded.
+  Branch: `fix/production-noise-ignoring`
+
 ---
 
 ## Status: every actionable item from the original audit is closed
