@@ -1281,7 +1281,11 @@
                 stats: null,
                 filters: { status: 'all', method: 'all', search: '' },
                 livePaused: false,
-                recentTimestamps: [],
+                // Keyed by capture id (not a plain array) so re-processing the same
+                // capture - which happens routinely, since loadRecent() re-pushes every
+                // capture still inside the 60s window on every refresh - overwrites its
+                // own entry instead of adding a duplicate. See renderKPIs' RPM calculation.
+                recentCaptureTimestampsById: {},
                 site: '',
                 observation: {
                     isConnected: false,
@@ -2101,8 +2105,11 @@
                 var topEndpoints = stats.topEndpoints ?? stats.TopEndpoints ?? [];
 
                 var now = Date.now();
-                state.recentTimestamps = state.recentTimestamps.filter(function (x) { return now - x <= 60000; });
-                var rpm = state.recentTimestamps.length;
+                var byId = state.recentCaptureTimestampsById;
+                Object.keys(byId).forEach(function (id) {
+                    if (now - byId[id] > 60000) delete byId[id];
+                });
+                var rpm = Object.keys(byId).length;
 
                 var errorRate = total > 0 ? (failed / total) * 100 : 0;
                 var erSev = sevFor(errorRate, 3, 8);
@@ -2210,7 +2217,7 @@
                 mergeChartCaptures(state.captures);
 
                 state.captures.forEach(function (c) {
-                    if (Date.now() - c.timestamp <= 60000) state.recentTimestamps.push(c.timestamp);
+                    if (Date.now() - c.timestamp <= 60000) state.recentCaptureTimestampsById[c.id] = c.timestamp;
                 });
 
                 renderTable();
@@ -2258,8 +2265,9 @@
                     if (batch.length === 0) return;
 
                     mergeChartCaptures(batch);
-                    var now = Date.now();
-                    batch.forEach(function () { state.recentTimestamps.push(now); });
+                    batch.forEach(function (capture) {
+                        state.recentCaptureTimestampsById[capture.id] = capture.timestamp;
+                    });
 
                     renderKPIs();
                     renderChart();
@@ -2445,7 +2453,15 @@
                 });
 
                 connection.onreconnecting(function () { el['live-status-text'].textContent = 'Reconnecting...'; });
-                connection.onreconnected(function () { updateLiveIndicators(); });
+                connection.onreconnected(function () {
+                    updateLiveIndicators();
+                    // Any capture that arrived during the reconnect gap was never received
+                    // as a captureReceived event, so it would otherwise just be silently
+                    // missing from the feed with no indication anything was lost. A fresh
+                    // refresh re-syncs from the server's actual state instead of leaving
+                    // the dashboard's view quietly out of date.
+                    refreshAll(state.page).catch(function (err) { console.error('Post-reconnect refresh failed', err); });
+                });
                 connection.onclose(function () {
                     el['live-dot'].className = 'live-dot paused';
                     el['live-status-text'].textContent = 'Disconnected from live stream';
