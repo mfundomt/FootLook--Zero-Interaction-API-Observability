@@ -4,6 +4,24 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>FootLook — Real-time Observability</title>
+    <script>
+        // Runs synchronously, before the stylesheet below is applied to any content, so
+        // the correct theme is active on first paint - doing this after body content
+        // loads (e.g. in the main script at the bottom) would cause a visible flash of
+        // the wrong theme every time a dark-mode user loads the page.
+        (function () {
+            try {
+                var stored = localStorage.getItem('footlook_theme');
+                if (stored === 'dark' || stored === 'light') {
+                    document.documentElement.setAttribute('data-theme', stored);
+                }
+                // No stored preference -> no attribute set -> the prefers-color-scheme
+                // media query in the stylesheet below decides, exactly matching the OS.
+            } catch (err) {
+                // Storage blocked (private browsing, etc.) - fall back to OS preference only.
+            }
+        })();
+    </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
 
@@ -38,6 +56,85 @@
             --sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             --font-primary: var(--sans);
             --font-secondary: var(--mono);
+        }
+
+        /*
+          Dark mode: the two selectors below both apply the same dark palette,
+          but answer different questions.
+          - The media query is the *default when the user hasn't chosen* -
+            follow the OS/browser preference - guarded so an explicit light
+            choice (data-theme="light") always wins over it.
+          - The [data-theme="dark"] attribute selector is the *explicit user
+            choice*, set by the toggle button and persisted to localStorage,
+            and wins regardless of OS preference.
+          Every other rule in this file reads colors through the --variables
+          below, not literal hex values, so overriding them here is enough to
+          reskin the whole page - no rule below this needs to know about
+          themes at all.
+        */
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                --bg: #0d1117;
+                --panel: #151b23;
+                --panel-alt: #10151c;
+                --panel-raised: #1c232d;
+                --border: #2d3542;
+                --border-soft: #232a35;
+                --text-primary: #e6edf5;
+                --text-secondary: #c3ccd6;
+                --text-muted: #8b96a3;
+                --accent-soft: rgba(0,120,212,0.22);
+                --chase-soft: rgba(245, 158, 11, 0.22);
+                --entra-soft: rgba(249, 115, 22, 0.22);
+                --live-soft: rgba(0,120,212,0.22);
+                --lime-soft: rgba(34, 197, 94, 0.22);
+                --warn-soft: rgba(154,103,0,0.26);
+                --crit-soft: rgba(209,52,56,0.22);
+            }
+        }
+
+        :root[data-theme="dark"] {
+            --bg: #0d1117;
+            --panel: #151b23;
+            --panel-alt: #10151c;
+            --panel-raised: #1c232d;
+            --border: #2d3542;
+            --border-soft: #232a35;
+            --text-primary: #e6edf5;
+            --text-secondary: #c3ccd6;
+            --text-muted: #8b96a3;
+            --accent-soft: rgba(0,120,212,0.22);
+            --chase-soft: rgba(245, 158, 11, 0.22);
+            --entra-soft: rgba(249, 115, 22, 0.22);
+            --live-soft: rgba(0,120,212,0.22);
+            --lime-soft: rgba(34, 197, 94, 0.22);
+            --warn-soft: rgba(154,103,0,0.26);
+            --crit-soft: rgba(209,52,56,0.22);
+        }
+
+        .theme-toggle-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: var(--panel-raised);
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .theme-toggle-btn:hover {
+            border-color: var(--live);
+            color: var(--text-primary);
+        }
+
+        .header-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
         }
 
         * {
@@ -1024,6 +1121,119 @@
             z-index: 50;
         }
 
+        .waterfall-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.45);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            z-index: 60;
+        }
+
+            .waterfall-overlay[hidden] {
+                display: none;
+            }
+
+        .waterfall-modal {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            width: min(920px, 100%);
+            max-height: min(720px, 90vh);
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+        }
+
+        .waterfall-modal-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 18px 20px;
+            border-bottom: 1px solid var(--border-soft);
+        }
+
+            .waterfall-modal-head h2 {
+                margin: 0 0 4px;
+                font-size: 16px;
+            }
+
+        .waterfall-subtitle {
+            font-family: var(--font-secondary);
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .waterfall-body {
+            padding: 16px 20px 20px;
+            overflow-y: auto;
+        }
+
+        .waterfall-row {
+            display: grid;
+            grid-template-columns: minmax(140px, 260px) 1fr 64px;
+            align-items: center;
+            gap: 12px;
+            padding: 7px 0;
+            border-bottom: 1px solid var(--border-soft);
+        }
+
+            .waterfall-row:last-child {
+                border-bottom: none;
+            }
+
+        .waterfall-label {
+            font-family: var(--font-secondary);
+            font-size: 12px;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .waterfall-track {
+            position: relative;
+            height: 18px;
+            background: var(--panel-alt);
+            border-radius: 4px;
+        }
+
+        .waterfall-bar {
+            position: absolute;
+            top: 2px;
+            height: 14px;
+            border-radius: 3px;
+            min-width: 3px;
+        }
+
+            .waterfall-bar.status-2xx, .waterfall-bar.status-1xx {
+                background: var(--accent);
+            }
+
+            .waterfall-bar.status-3xx {
+                background: var(--chase);
+            }
+
+            .waterfall-bar.status-4xx, .waterfall-bar.status-5xx {
+                background: var(--crit);
+            }
+
+        .waterfall-duration {
+            font-family: var(--font-secondary);
+            font-size: 11px;
+            color: var(--text-muted);
+            text-align: right;
+        }
+
+        .waterfall-empty {
+            color: var(--text-muted);
+            font-size: 13px;
+            padding: 12px 0;
+        }
+
         .toast {
             background: var(--panel-raised);
             border: 1px solid var(--border);
@@ -1086,9 +1296,17 @@
     <div class="container">
 
 
-        <h1>FootLook Live Dashboard</h1>
-        <div class="">
-            <span class="">Real-time observability stream.</span>
+        <div class="header-row">
+            <div>
+                <h1>FootLook Live Dashboard</h1>
+                <div class="">
+                    <span class="">Real-time observability stream.</span>
+                </div>
+            </div>
+            <button id="theme-toggle-btn" class="theme-toggle-btn" type="button" aria-label="Toggle dark mode">
+                <span id="theme-toggle-icon" aria-hidden="true">🌙</span>
+                <span id="theme-toggle-label">Dark</span>
+            </button>
         </div>
 
         <hr class="divider" />
@@ -1222,7 +1440,7 @@
                     <button id="next-page-btn" class="btn btn-ghost">Next</button>
                 </div>
             </div>
-            <table>
+            <table aria-label="Live captured requests feed">
                 <thead>
                     <tr>
                         <th>Time</th>
@@ -1233,7 +1451,7 @@
                         <th>Confidence</th>
                     </tr>
                 </thead>
-                <tbody id="capture-tbody"></tbody>
+                <tbody id="capture-tbody" aria-live="polite" aria-atomic="false" aria-relevant="additions"></tbody>
             </table>
         </div>
 
@@ -1261,6 +1479,19 @@
 
     <div class="toast-container" id="toast-container"></div>
 
+    <div class="waterfall-overlay" id="waterfall-overlay" role="dialog" aria-modal="true" aria-labelledby="waterfall-title" hidden>
+        <div class="waterfall-modal">
+            <div class="waterfall-modal-head">
+                <div>
+                    <h2 id="waterfall-title">Trace Waterfall</h2>
+                    <div class="waterfall-subtitle" id="waterfall-subtitle"></div>
+                </div>
+                <button id="waterfall-close-btn" class="btn btn-ghost" type="button" aria-label="Close trace waterfall">✕</button>
+            </div>
+            <div class="waterfall-body" id="waterfall-body"></div>
+        </div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
     <script>
         (function () {
@@ -1281,7 +1512,11 @@
                 stats: null,
                 filters: { status: 'all', method: 'all', search: '' },
                 livePaused: false,
-                recentTimestamps: [],
+                // Keyed by capture id (not a plain array) so re-processing the same
+                // capture - which happens routinely, since loadRecent() re-pushes every
+                // capture still inside the 60s window on every refresh - overwrites its
+                // own entry instead of adding a duplicate. See renderKPIs' RPM calculation.
+                recentCaptureTimestampsById: {},
                 site: '',
                 observation: {
                     isConnected: false,
@@ -1296,6 +1531,141 @@
             var connection = null;
             var observedTabWindow = null;
             var observedTabMonitor = null;
+
+            var TOKEN_QUERY_PARAM = 'footlook_token';
+            var TOKEN_STORAGE_KEY = 'footlook_token';
+            var TOKEN_EXPIRY_STORAGE_KEY = 'footlook_token_expires';
+            var TOKEN_EXPIRY_SAFETY_MARGIN_MS = 5000;
+
+            var authStorageFallback = { token: '', expiresAtUtc: '' };
+
+            function getStoredToken() {
+                try {
+                    return localStorage.getItem(TOKEN_STORAGE_KEY) || '';
+                } catch (err) {
+                    return authStorageFallback.token;
+                }
+            }
+
+            function getStoredTokenExpiry() {
+                try {
+                    return localStorage.getItem(TOKEN_EXPIRY_STORAGE_KEY) || '';
+                } catch (err) {
+                    return authStorageFallback.expiresAtUtc;
+                }
+            }
+
+            function setStoredToken(token, expiresAtUtc) {
+                try {
+                    localStorage.setItem(TOKEN_STORAGE_KEY, token);
+                    localStorage.setItem(TOKEN_EXPIRY_STORAGE_KEY, expiresAtUtc || '');
+                } catch (err) {
+                    authStorageFallback = { token: token, expiresAtUtc: expiresAtUtc || '' };
+                }
+            }
+
+            function clearStoredToken() {
+                try {
+                    localStorage.removeItem(TOKEN_STORAGE_KEY);
+                    localStorage.removeItem(TOKEN_EXPIRY_STORAGE_KEY);
+                } catch (err) {
+                    authStorageFallback = { token: '', expiresAtUtc: '' };
+                }
+            }
+
+            function isStoredTokenUsable() {
+                var token = getStoredToken();
+                if (!token) return false;
+
+                var expiresAt = new Date(getStoredTokenExpiry()).getTime();
+                return Number.isFinite(expiresAt) && Date.now() < (expiresAt - TOKEN_EXPIRY_SAFETY_MARGIN_MS);
+            }
+
+            // Two independent code paths call footlookFetch on first load (init's
+            // refreshAll and the pause/resume button's immediate status check), and both
+            // can need a token around the same time. Rather than each opening its own
+            // window.prompt + login request, every caller awaits this SAME in-flight
+            // promise, so only one login round-trip (and one dialog) ever happens.
+            var authInFlight = null;
+
+            async function ensureAuthenticated(forceReAuth) {
+                if (!forceReAuth && isStoredTokenUsable()) {
+                    return getStoredToken();
+                }
+
+                if (authInFlight) {
+                    return authInFlight;
+                }
+
+                authInFlight = (async function () {
+                    try {
+                        var apiKey = window.prompt(
+                            'Sign in to FootLook\n\nEnter your API key (demo default: footlook-dev-key):',
+                            '');
+
+                        if (!apiKey) {
+                            return '';
+                        }
+
+                        var response = await fetch('/footlook/auth/token', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ apiKey: apiKey.trim() })
+                        });
+
+                        if (!response.ok) {
+                            toast('Sign-in failed: invalid API key.');
+                            clearStoredToken();
+                            return '';
+                        }
+
+                        var data = await response.json();
+                        var token = data.token || data.Token;
+                        var expiresAtUtc = data.expiresAtUtc || data.ExpiresAtUtc;
+                        setStoredToken(token, expiresAtUtc);
+                        return token;
+                    } finally {
+                        authInFlight = null;
+                    }
+                })();
+
+                return authInFlight;
+            }
+
+            // Every FootLook REST call must go through this instead of the raw fetch API so
+            // a valid bearer token is always attached (logging in first if needed), and a
+            // 401 (missing/expired token) triggers a fresh sign-in instead of a silently
+            // broken dashboard. A 403 means the signed-in token isn't admin-flagged.
+            async function footlookFetch(url, options) {
+                options = options || {};
+                var headers = Object.assign({}, options.headers || {});
+                var token = await ensureAuthenticated(false);
+                if (token) {
+                    headers['Authorization'] = 'Bearer ' + token;
+                }
+
+                var response = await fetch(url, Object.assign({}, options, { headers: headers }));
+
+                if (response.status === 401) {
+                    clearStoredToken();
+                    var newToken = await ensureAuthenticated(true);
+                    if (newToken) {
+                        headers['Authorization'] = 'Bearer ' + newToken;
+                        response = await fetch(url, Object.assign({}, options, { headers: headers }));
+                    }
+                } else if (response.status === 403) {
+                    toast('That action needs an admin FootLook account.');
+                }
+
+                return response;
+            }
+
+            function withTokenQuery(url) {
+                var token = getStoredToken();
+                if (!token) return url;
+                var separator = url.indexOf('?') === -1 ? '?' : '&';
+                return url + separator + TOKEN_QUERY_PARAM + '=' + encodeURIComponent(token);
+            }
 
             function statusClass(s) { return Math.floor(s / 100) + 'xx'; }
             function fmtTime(ts) {
@@ -1400,8 +1770,40 @@
                     'spark-errorrate', 'kpi-slow', 'kpi-slow-card', 'kpi-rpm', 'kpi-topendpoints',
                     'kpi-confidence', 'kpi-confidence-tag', 'kpi-confidence-card',
                     'visible-results-count', 'chart-wrap', 'capture-tbody', 'page-info', 'prev-page-btn',
-                    'next-page-btn', 'capture-details-panel', 'pause-live-btn', 'toast-container', 'search-path'
+                    'next-page-btn', 'capture-details-panel', 'pause-live-btn', 'toast-container', 'search-path',
+                    'theme-toggle-btn', 'theme-toggle-icon', 'theme-toggle-label'
                 ].forEach(function (id) { el[id] = document.getElementById(id); });
+            }
+
+            function getActiveTheme() {
+                var explicit = document.documentElement.getAttribute('data-theme');
+                if (explicit === 'dark' || explicit === 'light') return explicit;
+                return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+                    ? 'dark'
+                    : 'light';
+            }
+
+            function applyTheme(theme) {
+                document.documentElement.setAttribute('data-theme', theme);
+                try { localStorage.setItem('footlook_theme', theme); } catch (err) { /* private browsing etc. */ }
+                syncThemeToggleUI();
+            }
+
+            function syncThemeToggleUI() {
+                if (!el['theme-toggle-icon'] || !el['theme-toggle-label']) return;
+                var isDark = getActiveTheme() === 'dark';
+                // Label/icon describe the action the button performs (switch TO), not the
+                // current state, matching the existing Pause/Resume Captures button pattern.
+                el['theme-toggle-icon'].textContent = isDark ? '☀️' : '🌙';
+                el['theme-toggle-label'].textContent = isDark ? 'Light' : 'Dark';
+            }
+
+            function wireThemeToggle() {
+                if (!el['theme-toggle-btn']) return;
+                syncThemeToggleUI();
+                el['theme-toggle-btn'].addEventListener('click', function () {
+                    applyTheme(getActiveTheme() === 'dark' ? 'light' : 'dark');
+                });
             }
 
             function toast(msg) {
@@ -1514,7 +1916,7 @@
                 params.set('tabId', String(tabId));
                 if (siteUrl) params.set('siteUrl', String(siteUrl));
 
-                fetch('/footlook/outcomes/session/start?' + params.toString(), {
+                footlookFetch('/footlook/outcomes/session/start?' + params.toString(), {
                     method: 'POST'
                 }).catch(function () { });
             }
@@ -1525,7 +1927,7 @@
                 var params = new URLSearchParams();
                 params.set('sessionId', String(sessionId));
 
-                fetch('/footlook/outcomes/session/end?' + params.toString(), {
+                footlookFetch('/footlook/outcomes/session/end?' + params.toString(), {
                     method: 'POST'
                 }).catch(function () { });
             }
@@ -1575,8 +1977,10 @@
             }
 
             function shouldShowSiteConnector() {
-                var host = String(window.location.hostname || '').toLowerCase();
-                return host === 'footlook.co.za' || host.endsWith('.footlook.co.za');
+                // Connect-to-site is for observing your own frontend against your own
+                // FootLook-instrumented API (same project, any environment) - not gated
+                // to a specific production hostname.
+                return true;
             }
 
             function applySiteConnectorVisibility() {
@@ -1786,6 +2190,9 @@
                     '<div class="details-head">'
                     + '<span class="status-badge status-' + cls + ' lg">' + row.status + '</span>'
                     + '<span class="details-title mono">' + escapeHtml(row.method + ' ' + row.path) + '</span>'
+                    + (row.correlationId
+                        ? '<button type="button" class="btn btn-ghost view-trace-btn" data-correlation-id="' + escapeHtml(row.correlationId) + '">View Trace</button>'
+                        : '')
                     + '</div>'
                     + '<div class="details-grid">'
                     + detailField('Duration', row.duration + 'ms')
@@ -1798,6 +2205,72 @@
                     + detailField('Outcome', row.ok ? 'Success' : (row.status >= 500 ? 'Server error' : 'Client error'))
                     + '</div>'
                     + '<div class="details-json mono">' + escapeHtml(jsonBlock) + '</div>';
+            }
+
+            // Trace waterfall: shows every capture sharing a correlation ID as a timeline,
+            // so a caller that made several related requests under the same
+            // X-Correlation-ID (a client-propagated header, not a distributed span tree -
+            // FootLook captures one hop at a time, it doesn't stitch together
+            // cross-service spans) can see them laid out against each other instead of
+            // hunting through the paged list one at a time.
+            async function openTraceWaterfall(correlationId) {
+                if (!correlationId) return;
+
+                document.getElementById('waterfall-subtitle').textContent = 'Correlation: ' + correlationId;
+                document.getElementById('waterfall-body').innerHTML = '<div class="waterfall-empty">Loading…</div>';
+                document.getElementById('waterfall-overlay').hidden = false;
+
+                try {
+                    var response = await footlookFetch(
+                        '/footlook/captures?correlationId=' + encodeURIComponent(correlationId)
+                        + '&pageSize=100&sortBy=timestamp&sortDirection=asc');
+
+                    if (!response.ok) throw new Error('Failed to load trace. Status ' + response.status);
+
+                    var payload = await response.json();
+                    var items = payload.results ?? payload.Results ?? [];
+                    renderWaterfall(items.map(normalizeCapture));
+                } catch (err) {
+                    console.error(err);
+                    document.getElementById('waterfall-body').innerHTML = '<div class="waterfall-empty">Failed to load trace.</div>';
+                }
+            }
+
+            function closeTraceWaterfall() {
+                document.getElementById('waterfall-overlay').hidden = true;
+            }
+
+            function renderWaterfall(captures) {
+                var body = document.getElementById('waterfall-body');
+
+                if (captures.length === 0) {
+                    body.innerHTML = '<div class="waterfall-empty">No captures found for this correlation ID.</div>';
+                    return;
+                }
+
+                var sorted = captures.slice().sort(function (a, b) { return a.timestamp - b.timestamp; });
+                var start = sorted[0].timestamp;
+                var end = Math.max.apply(null, sorted.map(function (c) { return c.timestamp + Math.max(0, c.duration); }));
+                var span = Math.max(1, end - start);
+
+                document.getElementById('waterfall-subtitle').textContent =
+                    sorted.length + (sorted.length === 1 ? ' capture' : ' captures') + ' • span ' + span + 'ms';
+
+                body.innerHTML = sorted.map(function (c) {
+                    var offsetPct = ((c.timestamp - start) / span) * 100;
+                    // Minimum visible width so a very fast request still shows a bar,
+                    // not an invisible sliver, on a wide time span.
+                    var widthPct = Math.max(0.6, (Math.max(0, c.duration) / span) * 100);
+                    var label = c.method + ' ' + c.path;
+
+                    return '<div class="waterfall-row">'
+                        + '<div class="waterfall-label" title="' + escapeHtml(label) + '">' + escapeHtml(label) + '</div>'
+                        + '<div class="waterfall-track">'
+                        + '<div class="waterfall-bar status-' + statusClass(c.status) + '" style="left:' + offsetPct.toFixed(2) + '%;width:' + widthPct.toFixed(2) + '%" title="' + c.status + ' • ' + c.duration + 'ms"></div>'
+                        + '</div>'
+                        + '<div class="waterfall-duration">' + c.duration + 'ms</div>'
+                        + '</div>';
+                }).join('');
             }
 
             function renderTable() {
@@ -1966,8 +2439,11 @@
                 var topEndpoints = stats.topEndpoints ?? stats.TopEndpoints ?? [];
 
                 var now = Date.now();
-                state.recentTimestamps = state.recentTimestamps.filter(function (x) { return now - x <= 60000; });
-                var rpm = state.recentTimestamps.length;
+                var byId = state.recentCaptureTimestampsById;
+                Object.keys(byId).forEach(function (id) {
+                    if (now - byId[id] > 60000) delete byId[id];
+                });
+                var rpm = Object.keys(byId).length;
 
                 var errorRate = total > 0 ? (failed / total) * 100 : 0;
                 var erSev = sevFor(errorRate, 3, 8);
@@ -2050,9 +2526,9 @@
 
             async function loadRecent(page) {
                 state.page = Math.max(1, page);
-                var response = await fetch(buildCapturesUrl(state.page));
+                var response = await footlookFetch(buildCapturesUrl(state.page));
                 if (!response.ok) {
-                    response = await fetch(buildLegacyCapturesUrl(state.page));
+                    response = await footlookFetch(buildLegacyCapturesUrl(state.page));
                 }
                 if (!response.ok) throw new Error('Failed to load captures. Status ' + response.status);
 
@@ -2075,7 +2551,7 @@
                 mergeChartCaptures(state.captures);
 
                 state.captures.forEach(function (c) {
-                    if (Date.now() - c.timestamp <= 60000) state.recentTimestamps.push(c.timestamp);
+                    if (Date.now() - c.timestamp <= 60000) state.recentCaptureTimestampsById[c.id] = c.timestamp;
                 });
 
                 renderTable();
@@ -2089,7 +2565,7 @@
                     return;
                 }
 
-                var response = await fetch('/footlook/captures/stats');
+                var response = await footlookFetch('/footlook/captures/stats');
                 if (!response.ok) throw new Error('Failed to load stats. Status ' + response.status);
                 state.stats = await response.json();
                 renderKPIs();
@@ -2098,6 +2574,40 @@
             async function refreshAll(page) {
                 await loadRecent(page ?? state.page);
                 await loadStats();
+            }
+
+            // Live captures arrive as individual SignalR events, but at real production
+            // volume (tens+/sec) handling each one with its own REST re-fetch and full
+            // table re-render would flood both the browser and the server with redundant
+            // work. This throttles instead of naively debouncing: a burst of events within
+            // the window collapses into exactly one refresh at the end of it, but - unlike
+            // a resetting debounce - continuous traffic can't starve the UI indefinitely,
+            // since a flush is guaranteed at least once per window regardless of how many
+            // more events keep arriving during it.
+            var LIVE_REFRESH_THROTTLE_MS = 300;
+            var pendingLiveCaptures = [];
+            var liveRefreshTimer = null;
+
+            function scheduleLiveRefresh() {
+                if (liveRefreshTimer) return;
+
+                liveRefreshTimer = setTimeout(async function () {
+                    var batch = pendingLiveCaptures;
+                    pendingLiveCaptures = [];
+                    liveRefreshTimer = null;
+
+                    if (batch.length === 0) return;
+
+                    mergeChartCaptures(batch);
+                    batch.forEach(function (capture) {
+                        state.recentCaptureTimestampsById[capture.id] = capture.timestamp;
+                    });
+
+                    renderKPIs();
+                    renderChart();
+
+                    if (!state.livePaused && state.page === 1) await refreshAll(1);
+                }, LIVE_REFRESH_THROTTLE_MS);
             }
 
             function updateLiveIndicators() {
@@ -2155,6 +2665,20 @@
                     renderTable();
                 });
 
+                el['capture-details-panel'].addEventListener('click', function (e) {
+                    var btn = e.target.closest('.view-trace-btn');
+                    if (!btn) return;
+                    openTraceWaterfall(btn.getAttribute('data-correlation-id'));
+                });
+
+                document.getElementById('waterfall-close-btn').addEventListener('click', closeTraceWaterfall);
+                document.getElementById('waterfall-overlay').addEventListener('click', function (e) {
+                    if (e.target.id === 'waterfall-overlay') closeTraceWaterfall();
+                });
+                document.addEventListener('keydown', function (e) {
+                    if (e.key === 'Escape') closeTraceWaterfall();
+                });
+
                 el['pause-live-btn'].addEventListener('click', function () {
                     state.livePaused = !state.livePaused;
                     updateLiveIndicators();
@@ -2182,22 +2706,29 @@
                         return;
                     }
 
-                    var response = await fetch('/footlook/captures', { method: 'DELETE' });
+                    var response = await footlookFetch('/footlook/captures', { method: 'DELETE' });
                     if (!response.ok) {
                         toast('Failed to clear captures');
                         return;
                     }
+
+                    // Everything below used to be unreachable: a full-page reload
+                    // (window.location.href = ...) ran first and navigated away before any
+                    // of it could execute, and what it referenced (bare `captures`,
+                    // `requestTimestamps`, `window.rpmLabels/rpmValues`, a Chart.js-style
+                    // `chart.update()` in clearRpmTimelineGraph) doesn't exist anywhere else
+                    // in this file - leftover from an earlier implementation. The server
+                    // side is already cleared by the DELETE above; reset the client-side
+                    // accumulated state that refreshAll() alone doesn't touch (it only adds
+                    // to chartCaptures/recentCaptureTimestampsById, never removes) instead of
+                    // forcing a full page reload just to get a consistent view.
                     state.page = 1;
+                    state.captures = [];
+                    state.chartCaptures = [];
+                    state.recentCaptureTimestampsById = {};
                     await refreshAll(1);
+                    renderChart();
                     toast('Stored captures cleared');
-
-                    window.location.href = window.location.pathname + '?t=' + Date.now();
-
-                    if (Array.isArray(captures)) captures.length = 0;
-                    if (Array.isArray(requestTimestamps)) requestTimestamps.length = 0;
-                    clearRpmTimelineGraph();
-                    if (Array.isArray(window.rpmLabels)) window.rpmLabels.length = 0;
-                    if (Array.isArray(window.rpmValues)) window.rpmValues.length = 0;
                 });
 
                 if (el['connect-btn'] && el['site-url-input']) {
@@ -2222,9 +2753,19 @@
                         var sessionId = createObservationId('sessionId');
                         var trackedUrl = buildTrackedSiteUrl(normalizedUrl, tabId, sessionId);
 
+                        // Deliberately NOT passing 'noopener' in the features string: per spec,
+                        // window.open() always returns null when noopener is set, regardless of
+                        // whether the popup actually opened - that made success undetectable and
+                        // also broke startObservedTabMonitoring() below (which needs a real
+                        // window reference to know when the tab is closed). Instead we get the
+                        // reference first, then sever window.opener manually - same security
+                        // benefit as rel=noopener, without losing the reference.
                         var openedTab = null;
                         try {
-                            openedTab = window.open(trackedUrl, '_blank', 'noopener,noreferrer');
+                            openedTab = window.open(trackedUrl, '_blank');
+                            if (openedTab) {
+                                try { openedTab.opener = null; } catch { }
+                            }
                         } catch {
                             openedTab = null;
                         }
@@ -2261,26 +2802,31 @@
             }
 
             async function wireLiveStream() {
+                await ensureAuthenticated(false);
+
                 connection = new signalR.HubConnectionBuilder()
-                    .withUrl('/footlook/live')
+                    .withUrl(withTokenQuery('/footlook/live'))
                     .withAutomaticReconnect()
                     .build();
 
-                connection.on('captureReceived', async function (payload) {
+                connection.on('captureReceived', function (payload) {
                     var capture = normalizeCapture(payload);
                     if (!isCaptureInObservedSession(capture)) return;
 
-                    mergeChartCaptures([capture]);
-                    state.recentTimestamps.push(Date.now());
-
-                    renderKPIs();
-                    renderChart();
-
-                    if (!state.livePaused && state.page === 1) await refreshAll(1);
+                    pendingLiveCaptures.push(capture);
+                    scheduleLiveRefresh();
                 });
 
                 connection.onreconnecting(function () { el['live-status-text'].textContent = 'Reconnecting...'; });
-                connection.onreconnected(function () { updateLiveIndicators(); });
+                connection.onreconnected(function () {
+                    updateLiveIndicators();
+                    // Any capture that arrived during the reconnect gap was never received
+                    // as a captureReceived event, so it would otherwise just be silently
+                    // missing from the feed with no indication anything was lost. A fresh
+                    // refresh re-syncs from the server's actual state instead of leaving
+                    // the dashboard's view quietly out of date.
+                    refreshAll(state.page).catch(function (err) { console.error('Post-reconnect refresh failed', err); });
+                });
                 connection.onclose(function () {
                     el['live-dot'].className = 'live-dot paused';
                     el['live-status-text'].textContent = 'Disconnected from live stream';
@@ -2291,9 +2837,12 @@
 
             async function init() {
                 try {
+                    await ensureAuthenticated(false);
+
                     applySiteConnectorVisibility();
                     cacheEls();
                     wireEvents();
+                    wireThemeToggle();
                     updateLiveIndicators();
                     if (el['site-label']) {
                         el['site-label'].textContent = state.site;
@@ -2322,7 +2871,7 @@
 
                 async function syncButtonFromServerStatus() {
                     try {
-                        const response = await fetch('/footlook/captures/status', { method: 'GET' });
+                        const response = await footlookFetch('/footlook/captures/status', { method: 'GET' });
                         if (!response.ok) return;
 
                         const data = await response.json();
@@ -2344,7 +2893,7 @@
                     const endpoint = isPaused ? '/footlook/resume' : '/footlook/pause';
 
                     try {
-                        const response = await fetch(endpoint, { method: 'POST' });
+                        const response = await footlookFetch(endpoint, { method: 'POST' });
                         if (!response.ok) return;
 
                         isPaused = !isPaused;
@@ -2355,26 +2904,6 @@
                 });
             })();
         })();
-
-        // Add helper near other chart helpers.
-        function clearRpmTimelineGraph() {
-            // Support common chart variable names if already present.
-            const chart = window.requestsPerMinuteChart
-                || window.rpmTimelineChart
-                || window.requestsPerMinuteTimelineChart;
-
-            if (!chart || !chart.data) return;
-
-            chart.data.labels = [];
-
-            if (Array.isArray(chart.data.datasets)) {
-                chart.data.datasets.forEach(ds => {
-                    ds.data = [];
-                });
-            }
-
-            chart.update();
-        }
     </script>
 </body>
 </html>

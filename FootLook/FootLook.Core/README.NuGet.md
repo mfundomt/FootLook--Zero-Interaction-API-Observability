@@ -131,7 +131,26 @@ builder.Services.AddFootLook(options =>
 	options.IgnoredPaths.Add("/favicon.ico");
 	options.IgnoredPaths.Add("/.well-known");
 
-	// HTTP methods allowed for CORS on the FootLook endpoints
+	// A path ending in "*" is a wildcard prefix match (e.g. "/robots*" also
+	// catches "/robots.txt" and scanner variants like "/robots933456.txt");
+	// without it, "/robots" only ever matches the exact path "/robots" or
+	// "/robots/..." - not "/robots.txt". Recommended baseline for any
+	// internet-facing deployment, to keep bot/crawler/scanner noise out of
+	// your captures:
+	options.IgnoredPaths.Add("/robots*");
+	options.IgnoredPaths.Add("/sitemap*");
+	options.IgnoredPaths.Add("/ads.txt");
+	options.IgnoredPaths.Add("/humans.txt");
+	options.IgnoredPaths.Add("/security.txt");
+	options.IgnoredPaths.Add("/browserconfig.xml");
+	options.IgnoredPaths.Add("/apple-touch-icon*");
+	options.IgnoredPaths.Add("/xmlrpc.php");
+	options.IgnoredPaths.Add("/wp-");   // wp-login.php, wp-admin, wp-content...
+	options.IgnoredPaths.Add("/.git");
+	options.IgnoredPaths.Add("/.env");
+
+	// HTTP methods FootLook will capture (not related to CORS - this filters which
+	// requests get observed, it does not affect cross-origin browser permissions)
 	options.AllowedMethods.Add("GET");
 	options.AllowedMethods.Add("POST");
 	options.AllowedMethods.Add("PATCH");
@@ -154,7 +173,7 @@ builder.Services.AddFootLook(options =>
 | `ServiceName` | Logical service name shown in captures. | `"MyApi"` |
 | `EnvironmentName` | Environment name shown in captures. | `Development` |
 | `IgnoredPaths` | Paths excluded from capture. | dashboard/swagger paths |
-| `AllowedMethods` | HTTP methods allowed via CORS on endpoints. | `GET`, `POST`, ... |
+| `AllowedMethods` | HTTP methods FootLook will capture; empty list means all methods. Not related to CORS. | `GET`, `POST`, ... |
 
 ### Example `appsettings.json`
 
@@ -186,8 +205,21 @@ By default FootLook uses:
 
 No database is required. Data is combined through a composite sink and processed by a background worker draining the capture queue.
 
+**Known limitation: single-instance only.** The capture queue, in-memory store,
+and request-deduplication cache are all in-process state. Behind a load
+balancer with multiple instances/pods, each instance sees only its own slice
+of traffic, with no unified view and no cross-instance deduplication.
+Multi-instance support would need an external shared store and a SignalR
+backplane (e.g. Redis) and isn't implemented yet — treat FootLook as a
+single-instance/single-host tool for now.
+
 ## Notes
 
 - Targets .NET 8.
 - Add `UseFootLook()` early in the pipeline so it can observe the full request lifecycle.
 - Add capture-related paths (dashboard, swagger, favicon) to `IgnoredPaths` to avoid self-capture noise.
+- The capture queue is bounded (`QueCapacity`) and drops the oldest queued
+  capture under sustained overload rather than blocking request threads or
+  growing unbounded. Drops are counted and visible via
+  `GET {EndpointBasePath}/reliability/status` (`QueueDropCount`) so silent
+  data loss under load is at least observable.

@@ -9,7 +9,12 @@ using System.Text;
 using System.Threading.Tasks;
 using FootLook.Core.Options;
 using FootLook.Core.Sinks;
+using FootLook.Core.Security;
 using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 
 namespace FootLook.Core.Extensions
 {
@@ -38,6 +43,10 @@ namespace FootLook.Core.Extensions
             services.AddSingleton<ProductOutcomeMetricsService>();
             services.AddSingleton<IShadowCaptureStore>(provider => provider.GetRequiredService<InMemorySink>());
             services.AddSingleton<CaptureHistoryService>();
+            // Stateless (no instance fields, every method is a pure function of its
+            // parameters) - safe and cheap to share as a singleton instead of the
+            // endpoints newing one up per request.
+            services.AddSingleton<CaptureIdentityResolver>();
             //services.AddSingleton<MongoSink>();
 
 
@@ -51,10 +60,82 @@ namespace FootLook.Core.Extensions
                    provide.GetRequiredService<InMemorySink>()
                 };
 
-                return new CompositeSink(sinks);
+                return new CompositeSink(
+                    sinks,
+                    provide.GetRequiredService<FootLookOptions>(),
+                    provide.GetRequiredService<CaptureReliabilityState>(),
+                    provide.GetRequiredService<Microsoft.Extensions.Logging.ILogger<CompositeSink>>());
             });
             // Register the ShadowBackgroundWorker as a hosted service, which will run in the background and process captured requests from the queue.
             services.AddHostedService<ShadowBackgroundWorker>();
+
+            services.AddSingleton<FootLookTokenService>();
+
+            // A named scheme (not the default) so registering FootLook auth never changes
+            // an app's own default authentication behavior if it already has one.
+            services.AddAuthentication()
+                .AddJwtBearer(FootLookAuthDefaults.SchemeName, _ => { });
+
+            // JwtBearerOptions needs the signing key from FootLookTokenService, which isn't
+            // available yet when AddJwtBearer's own configure delegate runs above - this
+            // named-options + DI form runs once the container can resolve it.
+            services.AddOptions<JwtBearerOptions>(FootLookAuthDefaults.SchemeName)
+                .Configure<FootLookTokenService, FootLookOptions>((jwtOptions, tokenService, footLookOptions) =>
+                {
+                    jwtOptions.TokenValidationParameters = new TokenValidationParameters
+                    {
+                        ValidateIssuer = true,
+                        ValidIssuer = FootLookAuthDefaults.Issuer,
+                        ValidateAudience = true,
+                        ValidAudience = FootLookAuthDefaults.Audience,
+                        ValidateLifetime = true,
+                        ValidateIssuerSigningKey = true,
+                        IssuerSigningKey = tokenService.SigningKey,
+                        ClockSkew = TimeSpan.FromSeconds(30),
+                    };
+
+                    var hubPath = footLookOptions.EndpointBasePath.TrimEnd('/') + "/live";
+
+                    jwtOptions.Events = new JwtBearerEvents
+                    {
+                        // Browsers can't set a custom Authorization header on a WebSocket
+                        // upgrade request, so the SignalR hub accepts the token via query
+                        // string instead - but only for the hub path, never for REST calls.
+                        OnMessageReceived = context =>
+                        {
+                            var token = context.Request.Query[footLookOptions.TokenQueryParameterName];
+                            if (!string.IsNullOrEmpty(token) &&
+                                context.HttpContext.Request.Path.StartsWithSegments(hubPath, StringComparison.OrdinalIgnoreCase))
+                            {
+                                context.Token = token;
+                            }
+
+                            return Task.CompletedTask;
+                        },
+                        OnChallenge = context =>
+                        {
+                            context.HandleResponse();
+                            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                            context.Response.ContentType = "application/json";
+                            return context.Response.WriteAsync("{\"message\":\"Authentication required\"}");
+                        },
+                        OnForbidden = context =>
+                        {
+                            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                            context.Response.ContentType = "application/json";
+                            return context.Response.WriteAsync("{\"message\":\"This action requires an admin FootLook account.\"}");
+                        }
+                    };
+                });
+
+            services.AddAuthorizationBuilder()
+                .AddPolicy(FootLookAuthDefaults.UserPolicy, policy => policy
+                    .AddAuthenticationSchemes(FootLookAuthDefaults.SchemeName)
+                    .RequireAuthenticatedUser())
+                .AddPolicy(FootLookAuthDefaults.AdminPolicy, policy => policy
+                    .AddAuthenticationSchemes(FootLookAuthDefaults.SchemeName)
+                    .RequireClaim(FootLookAuthDefaults.AdminClaimType, "true"));
+
             return services;
 
             #region Validation of FootLookOptions

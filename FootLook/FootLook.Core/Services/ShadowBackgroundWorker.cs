@@ -20,6 +20,8 @@ namespace FootLook.Core.Services
         private readonly CaptureReliabilityState _reliabilityState;
         private readonly ProductOutcomeMetricsService _productOutcomeMetrics;
         private readonly ConcurrentDictionary<string, DateTime> _recentRequestKeys = new(StringComparer.OrdinalIgnoreCase);
+        private long _nextDedupeSweepUnixMs;
+        private const int DedupeSweepIntervalMs = 5000;
 
         public ShadowBackgroundWorker(
             IShadowQueue  queue,
@@ -58,9 +60,20 @@ namespace FootLook.Core.Services
 
                         _logger.LogInformation("Processing captured request: {Method} {Path}", capturedRequest.Method, capturedRequest.Path);
 
-                        var persisted = await TryWriteWithRetryAsync(capturedRequest, stoppingToken);
-                        if (!persisted)
+                        // The sink (CompositeSink in the default registration) retries each
+                        // of its own sinks individually and only throws here when every sink
+                        // failed to persist this capture - a partial failure is recorded by
+                        // the sink itself and still lets the capture through.
+                        try
                         {
+                            await _sink.WriteAsync(capturedRequest);
+                        }
+                        catch (Exception persistEx)
+                        {
+                            _reliabilityState.RecordPersistFailure(persistEx.Message);
+                            _logger.LogError(persistEx,
+                                "FootLook failed to persist capture {Id} to any sink; skipping event/broadcast for it.",
+                                capturedRequest.Id);
                             continue;
                         }
 
@@ -68,7 +81,21 @@ namespace FootLook.Core.Services
 
                         try
                         {
-                            await _hub.Clients.All.SendAsync("captureReceived", capturedRequest, cancellationToken: stoppingToken);
+                            if (!string.IsNullOrWhiteSpace(capturedRequest.CaptureScopeId))
+                            {
+                                await _hub.Clients
+                                    .Group(CaptureHub.GroupNameForScope(capturedRequest.CaptureScopeId))
+                                    .SendAsync("captureReceived", capturedRequest, cancellationToken: stoppingToken);
+                            }
+                            else
+                            {
+                                // No scope on the capture (shouldn't happen once ShadowMiddleware
+                                // always sets one) - drop the broadcast rather than fan it out to
+                                // every connected dashboard regardless of scope.
+                                _logger.LogWarning(
+                                    "FootLook capture {Id} has no CaptureScopeId; skipping live broadcast to avoid a cross-scope leak.",
+                                    capturedRequest.Id);
+                            }
                         }
                         catch (Exception broadcastEx)
                         {
@@ -136,13 +163,7 @@ namespace FootLook.Core.Services
             var windowSeconds = Math.Max(1, _options.DeduplicationWindowSeconds);
             var cutoff = now.AddSeconds(-windowSeconds);
 
-            foreach (var existing in _recentRequestKeys)
-            {
-                if (existing.Value < cutoff)
-                {
-                    _recentRequestKeys.TryRemove(existing.Key, out _);
-                }
-            }
+            SweepExpiredDedupeKeysIfDue(cutoff);
 
             if (_recentRequestKeys.TryGetValue(dedupeKey, out var seenAt) && seenAt >= cutoff)
             {
@@ -152,6 +173,38 @@ namespace FootLook.Core.Services
 
             _recentRequestKeys[dedupeKey] = now;
             return false;
+        }
+
+        /// <summary>
+        /// Expired dedupe keys used to be swept with a full dictionary scan on every single
+        /// request - fine at low volume, an O(n) cost paid on every request at high volume.
+        /// This time-gates the sweep to at most once per DedupeSweepIntervalMs regardless of
+        /// request rate: entries a little late to be evicted are harmless (TryGetValue's own
+        /// cutoff check below still rejects them as expired), but the sweep itself no longer
+        /// scales with traffic volume.
+        /// </summary>
+        private void SweepExpiredDedupeKeysIfDue(DateTime cutoff)
+        {
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var next = Interlocked.Read(ref _nextDedupeSweepUnixMs);
+            if (nowMs < next)
+            {
+                return;
+            }
+
+            if (Interlocked.CompareExchange(ref _nextDedupeSweepUnixMs, nowMs + DedupeSweepIntervalMs, next) != next)
+            {
+                // Another call already claimed this sweep window.
+                return;
+            }
+
+            foreach (var existing in _recentRequestKeys)
+            {
+                if (existing.Value < cutoff)
+                {
+                    _recentRequestKeys.TryRemove(existing.Key, out _);
+                }
+            }
         }
 
         private static string BuildDedupeKey(CapturedRequest request)
@@ -193,45 +246,6 @@ namespace FootLook.Core.Services
 
                 value = item.Value;
                 return true;
-            }
-
-            return false;
-        }
-
-        private async Task<bool> TryWriteWithRetryAsync(CapturedRequest request, CancellationToken cancellationToken)
-        {
-            var retryCount = Math.Max(0, _options.SinkWriteRetryCount);
-            var baseDelayMs = Math.Max(10, _options.SinkWriteRetryDelayMs);
-
-            for (var attempt = 0; attempt <= retryCount; attempt++)
-            {
-                try
-                {
-                    await _sink.WriteAsync(request);
-                    return true;
-                }
-                catch (Exception ex) when (attempt < retryCount)
-                {
-                    var attemptNo = attempt + 1;
-                    _reliabilityState.RecordRetry(attemptNo, ex.Message);
-                    _logger.LogWarning(ex,
-                        "FootLook sink write failed for capture {Id}. Retry {Attempt}/{MaxAttempts}.",
-                        request.Id,
-                        attemptNo,
-                        retryCount);
-
-                    var backoff = baseDelayMs * (int)Math.Pow(2, attempt);
-                    await Task.Delay(backoff, cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    _reliabilityState.RecordPersistFailure(ex.Message);
-                    _logger.LogError(ex,
-                        "FootLook sink write failed permanently for capture {Id} after {Attempts} attempts.",
-                        request.Id,
-                        retryCount + 1);
-                    return false;
-                }
             }
 
             return false;
