@@ -67,11 +67,14 @@ builder.Services.AddFootLook(options =>
     options.ServiceName = "FootLook.Demo";
     options.EnvironmentName = builder.Environment.EnvironmentName;
 
-    // Ignore certain paths from being captured
+    // Ignore this app's own endpoints (dashboard/swagger/self) from being captured.
+    // Bot/crawler/scanner noise (robots.txt, sitemap.xml, wp-*, etc.) lives in
+    // appsettings.json's FootLook:IgnoredPathPrefixes instead, below - that's the
+    // list meant to grow per-environment without a redeploy.
     options.IgnoredPaths.Add("/footlook");
     options.IgnoredPaths.Add("/footlook.html");
+    options.IgnoredPaths.Add("/footlook-connect.js");
     options.IgnoredPaths.Add("/");
-    options.IgnoredPaths.Add("/robots");
     options.IgnoredPaths.Add("/footlook/pause");
     options.IgnoredPaths.Add("/footlook/resume");
     options.IgnoredPaths.Add("/swagger");
