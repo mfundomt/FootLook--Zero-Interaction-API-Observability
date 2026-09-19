@@ -4,6 +4,24 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>FootLook — Real-time Observability</title>
+    <script>
+        // Runs synchronously, before the stylesheet below is applied to any content, so
+        // the correct theme is active on first paint - doing this after body content
+        // loads (e.g. in the main script at the bottom) would cause a visible flash of
+        // the wrong theme every time a dark-mode user loads the page.
+        (function () {
+            try {
+                var stored = localStorage.getItem('footlook_theme');
+                if (stored === 'dark' || stored === 'light') {
+                    document.documentElement.setAttribute('data-theme', stored);
+                }
+                // No stored preference -> no attribute set -> the prefers-color-scheme
+                // media query in the stylesheet below decides, exactly matching the OS.
+            } catch (err) {
+                // Storage blocked (private browsing, etc.) - fall back to OS preference only.
+            }
+        })();
+    </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
 
@@ -38,6 +56,85 @@
             --sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             --font-primary: var(--sans);
             --font-secondary: var(--mono);
+        }
+
+        /*
+          Dark mode: the two selectors below both apply the same dark palette,
+          but answer different questions.
+          - The media query is the *default when the user hasn't chosen* -
+            follow the OS/browser preference - guarded so an explicit light
+            choice (data-theme="light") always wins over it.
+          - The [data-theme="dark"] attribute selector is the *explicit user
+            choice*, set by the toggle button and persisted to localStorage,
+            and wins regardless of OS preference.
+          Every other rule in this file reads colors through the --variables
+          below, not literal hex values, so overriding them here is enough to
+          reskin the whole page - no rule below this needs to know about
+          themes at all.
+        */
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                --bg: #0d1117;
+                --panel: #151b23;
+                --panel-alt: #10151c;
+                --panel-raised: #1c232d;
+                --border: #2d3542;
+                --border-soft: #232a35;
+                --text-primary: #e6edf5;
+                --text-secondary: #c3ccd6;
+                --text-muted: #8b96a3;
+                --accent-soft: rgba(0,120,212,0.22);
+                --chase-soft: rgba(245, 158, 11, 0.22);
+                --entra-soft: rgba(249, 115, 22, 0.22);
+                --live-soft: rgba(0,120,212,0.22);
+                --lime-soft: rgba(34, 197, 94, 0.22);
+                --warn-soft: rgba(154,103,0,0.26);
+                --crit-soft: rgba(209,52,56,0.22);
+            }
+        }
+
+        :root[data-theme="dark"] {
+            --bg: #0d1117;
+            --panel: #151b23;
+            --panel-alt: #10151c;
+            --panel-raised: #1c232d;
+            --border: #2d3542;
+            --border-soft: #232a35;
+            --text-primary: #e6edf5;
+            --text-secondary: #c3ccd6;
+            --text-muted: #8b96a3;
+            --accent-soft: rgba(0,120,212,0.22);
+            --chase-soft: rgba(245, 158, 11, 0.22);
+            --entra-soft: rgba(249, 115, 22, 0.22);
+            --live-soft: rgba(0,120,212,0.22);
+            --lime-soft: rgba(34, 197, 94, 0.22);
+            --warn-soft: rgba(154,103,0,0.26);
+            --crit-soft: rgba(209,52,56,0.22);
+        }
+
+        .theme-toggle-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: var(--panel-raised);
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .theme-toggle-btn:hover {
+            border-color: var(--live);
+            color: var(--text-primary);
+        }
+
+        .header-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
         }
 
         * {
@@ -1086,9 +1183,17 @@
     <div class="container">
 
 
-        <h1>FootLook Live Dashboard</h1>
-        <div class="">
-            <span class="">Real-time observability stream.</span>
+        <div class="header-row">
+            <div>
+                <h1>FootLook Live Dashboard</h1>
+                <div class="">
+                    <span class="">Real-time observability stream.</span>
+                </div>
+            </div>
+            <button id="theme-toggle-btn" class="theme-toggle-btn" type="button" aria-label="Toggle dark mode">
+                <span id="theme-toggle-icon" aria-hidden="true">🌙</span>
+                <span id="theme-toggle-label">Dark</span>
+            </button>
         </div>
 
         <hr class="divider" />
@@ -1539,8 +1644,40 @@
                     'spark-errorrate', 'kpi-slow', 'kpi-slow-card', 'kpi-rpm', 'kpi-topendpoints',
                     'kpi-confidence', 'kpi-confidence-tag', 'kpi-confidence-card',
                     'visible-results-count', 'chart-wrap', 'capture-tbody', 'page-info', 'prev-page-btn',
-                    'next-page-btn', 'capture-details-panel', 'pause-live-btn', 'toast-container', 'search-path'
+                    'next-page-btn', 'capture-details-panel', 'pause-live-btn', 'toast-container', 'search-path',
+                    'theme-toggle-btn', 'theme-toggle-icon', 'theme-toggle-label'
                 ].forEach(function (id) { el[id] = document.getElementById(id); });
+            }
+
+            function getActiveTheme() {
+                var explicit = document.documentElement.getAttribute('data-theme');
+                if (explicit === 'dark' || explicit === 'light') return explicit;
+                return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+                    ? 'dark'
+                    : 'light';
+            }
+
+            function applyTheme(theme) {
+                document.documentElement.setAttribute('data-theme', theme);
+                try { localStorage.setItem('footlook_theme', theme); } catch (err) { /* private browsing etc. */ }
+                syncThemeToggleUI();
+            }
+
+            function syncThemeToggleUI() {
+                if (!el['theme-toggle-icon'] || !el['theme-toggle-label']) return;
+                var isDark = getActiveTheme() === 'dark';
+                // Label/icon describe the action the button performs (switch TO), not the
+                // current state, matching the existing Pause/Resume Captures button pattern.
+                el['theme-toggle-icon'].textContent = isDark ? '☀️' : '🌙';
+                el['theme-toggle-label'].textContent = isDark ? 'Light' : 'Dark';
+            }
+
+            function wireThemeToggle() {
+                if (!el['theme-toggle-btn']) return;
+                syncThemeToggleUI();
+                el['theme-toggle-btn'].addEventListener('click', function () {
+                    applyTheme(getActiveTheme() === 'dark' ? 'light' : 'dark');
+                });
             }
 
             function toast(msg) {
@@ -2484,6 +2621,7 @@
                     applySiteConnectorVisibility();
                     cacheEls();
                     wireEvents();
+                    wireThemeToggle();
                     updateLiveIndicators();
                     if (el['site-label']) {
                         el['site-label'].textContent = state.site;

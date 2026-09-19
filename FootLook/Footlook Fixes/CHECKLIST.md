@@ -198,15 +198,24 @@ Legend: `[x]` done and merged into `staging` · `[ ]` not started · `[~]` parti
   aria-atomic="false" aria-relevant="additions"` to the capture table body
   and an `aria-label` on the table itself.
   Branch (all five above): `cleanup/low-priority-bundle`
-- [ ] **No dark/light theme persistence — scoped out.** Investigated: there is
-  no theme system at all currently (no toggle, no dark CSS variables,
-  nothing to persist). Building one from scratch is a real UI feature
-  project, not a "fix" - same treatment as multi-instance scaling. Not
-  attempted here.
-- [ ] **No trace-waterfall view across a correlation ID — scoped out.** Same
-  reasoning: querying all captures sharing a correlation ID and rendering a
-  timeline/waterfall visualization is a genuine new feature, not a quick
-  fix. Not attempted here.
+- [x] **Dark/light theme, requested by name after being scoped out**: the
+  dashboard's CSS already ran on custom properties for every surface color
+  (`--bg`, `--panel`, `--text-primary`, etc.), so a dark palette only needed
+  to override those variables, not touch individual rules. Added a
+  `:root[data-theme="dark"]` override plus a `prefers-color-scheme: dark`
+  media query (guarded so an explicit `data-theme="light"` choice always
+  wins) so it follows the OS by default until the user picks explicitly. A
+  tiny synchronous script in `<head>`, before the stylesheet, applies any
+  stored choice before first paint - doing it in the main script at the
+  bottom would flash the wrong theme on every load for a dark-mode user.
+  Toggle button added to the header, persisted to `localStorage`.
+  Verified via Playwright: default follows OS/media query (light in this
+  test environment, `rgb(245, 249, 255)`), toggling switches to
+  `rgb(13, 17, 23)` and updates `data-theme`, and a full page reload keeps
+  the dark theme with no flash.
+  Branch: `feature/dark-mode`
+- [x] **Trace-waterfall view across a correlation ID, requested by name after
+  being scoped out** — see below for detail.
 
 ---
 
