@@ -860,7 +860,11 @@ namespace FootLook.Core.Middleware
                 return false;
             }
 
-            return new Random().NextDouble() < _options.SamplingRate;
+            // Random.Shared (thread-safe, .NET 6+) instead of a fresh Random() per request -
+            // Random() seeds from the clock, so concurrent requests hitting this in the
+            // same tick could get correlated sequences, and allocating one per request is
+            // unnecessary churn on the hot path.
+            return Random.Shared.NextDouble() < _options.SamplingRate;
         }
 
         public long GetSizeInBytes(string value)

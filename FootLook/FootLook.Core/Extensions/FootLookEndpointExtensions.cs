@@ -319,6 +319,7 @@ namespace FootLook.Core.Extensions
             (HttpContext httpContext,
                    IShadowCaptureStore store,
                    ProductOutcomeMetricsService outcomes,
+                   CaptureIdentityResolver identityResolver,
                    int? count = null,
                    int? page = null,
                    int? pageSize = null,
@@ -339,16 +340,13 @@ namespace FootLook.Core.Extensions
                     !string.IsNullOrWhiteSpace(footlookSessionId)
                     && !string.IsNullOrWhiteSpace(footlookTabId);
 
-                CaptureIdentityResolver? resolver = null;
                 var threshold = Math.Clamp(minConfidence, 0.0, 1.0);
                 List<(CapturedRequest Capture, IdentityResolutionResult Resolution)> scoredCaptures = new();
 
                 if (hasIdentityScope)
                 {
-                    resolver = new CaptureIdentityResolver();
-
                     scoredCaptures = orderedCaptures
-                        .Select(c => (Capture: c, Resolution: resolver.Resolve(c, footlookSessionId!, footlookTabId!, siteHost)))
+                        .Select(c => (Capture: c, Resolution: identityResolver.Resolve(c, footlookSessionId!, footlookTabId!, siteHost)))
                         .Where(x => x.Resolution.Confidence >= threshold)
                         .ToList();
 
@@ -432,6 +430,7 @@ namespace FootLook.Core.Extensions
             group.MapGet("/captures/identity",
             (HttpContext httpContext,
                    IShadowCaptureStore store,
+                   CaptureIdentityResolver resolver,
                    string footlookSessionId,
                    string footlookTabId,
                    int page = 1,
@@ -445,7 +444,6 @@ namespace FootLook.Core.Extensions
                 }
 
                 var scopeId = ResolveScopeId(httpContext);
-                var resolver = new CaptureIdentityResolver();
                 var threshold = Math.Clamp(minConfidence, 0.0, 1.0);
                 var currentPage = Math.Max(1, page);
                 var size = Math.Clamp(pageSize, 1, 100);

@@ -43,6 +43,10 @@ namespace FootLook.Core.Extensions
             services.AddSingleton<ProductOutcomeMetricsService>();
             services.AddSingleton<IShadowCaptureStore>(provider => provider.GetRequiredService<InMemorySink>());
             services.AddSingleton<CaptureHistoryService>();
+            // Stateless (no instance fields, every method is a pure function of its
+            // parameters) - safe and cheap to share as a singleton instead of the
+            // endpoints newing one up per request.
+            services.AddSingleton<CaptureIdentityResolver>();
             //services.AddSingleton<MongoSink>();
 
 

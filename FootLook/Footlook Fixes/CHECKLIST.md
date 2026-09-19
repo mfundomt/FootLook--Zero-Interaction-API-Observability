@@ -173,24 +173,56 @@ Legend: `[x]` done and merged into `staging` · `[ ]` not started · `[~]` parti
   new traffic (previously this would have inflated with each refresh).
   Branch (both above): `fix/medium-frontend-issues`
 
-## 🟢 Low / cleanup (bundle, not yet started)
+## 🟢 Low / cleanup
 
-- [ ] `Random()` per-request instead of `Random.Shared`
-- [ ] Redundant channel allocation in `ShadowQueue`
-- [ ] `CaptureIdentityResolver` re-instantiated per-request instead of DI singleton
-- [ ] Dead JS referencing undefined globals in the clear-captures handler
-- [ ] No dark/light theme persistence
-- [ ] No trace-waterfall view across a correlation ID
-- [ ] No `aria-live` on the streaming feed (accessibility)
+- [x] `Random()` per-request → `Random.Shared` (thread-safe, no per-request
+  allocation, no clock-seed correlation risk under concurrent load).
+- [x] Redundant channel allocation in `ShadowQueue` — was already fixed as a
+  drive-by during the queue-drop-visibility work (critical bucket).
+- [x] `CaptureIdentityResolver` re-instantiated per-request → registered as a
+  DI singleton (`FootLookServiceCollectionExtensions`). It's fully stateless
+  (no instance fields, every method a pure function of its parameters), so
+  this is safe. Both call sites (`/captures/recent`, `/captures/identity`)
+  now take it as an injected parameter instead of `new`-ing it up.
+- [x] Dead JS in the clear-captures handler — worse than "dead code": a
+  `window.location.href` full-page reload ran immediately after the DELETE
+  call, making everything after it (five lines referencing `captures`,
+  `requestTimestamps`, `window.rpmLabels`/`rpmValues`, and a
+  `clearRpmTimelineGraph()` helper using a Chart.js-style API that doesn't
+  exist anywhere in this file) permanently unreachable - leftover from an
+  earlier implementation. Replaced with an actual client-side state reset
+  (`state.captures`/`chartCaptures`/`recentCaptureTimestampsById` cleared,
+  re-render) instead of forcing a full page reload; removed the now-fully-dead
+  `clearRpmTimelineGraph` function.
+- [x] No `aria-live` on the streaming feed — added `aria-live="polite"
+  aria-atomic="false" aria-relevant="additions"` to the capture table body
+  and an `aria-label` on the table itself.
+  Branch (all five above): `cleanup/low-priority-bundle`
+- [ ] **No dark/light theme persistence — scoped out.** Investigated: there is
+  no theme system at all currently (no toggle, no dark CSS variables,
+  nothing to persist). Building one from scratch is a real UI feature
+  project, not a "fix" - same treatment as multi-instance scaling. Not
+  attempted here.
+- [ ] **No trace-waterfall view across a correlation ID — scoped out.** Same
+  reasoning: querying all captures sharing a correlation ID and rendering a
+  timeline/waterfall visualization is a genuine new feature, not a quick
+  fix. Not attempted here.
 
 ---
 
-## What's next (in order)
+## Status: every actionable item from the original audit is closed
 
-1. Remaining High-bucket items that don't need a product decision: unbounded
-   body buffering/streaming, dashboard debouncing, field-aware PII masking.
-2. Medium bucket.
-3. Low/cleanup bundle — small enough to batch into one pass at the end.
-4. (Future, separate initiative) True multi-instance support — external
-   shared store + SignalR backplane. Needs its own dedicated design pass,
-   not part of this checklist.
+Every Critical, High, and Medium item is fixed and merged into `staging`.
+The Low/cleanup bundle is done except two items intentionally scoped out as
+separate future feature initiatives (not "fixes"):
+
+1. **Dark/light theme system** — doesn't exist yet; building one from scratch
+   is a UI feature project.
+2. **Trace-waterfall view across a correlation ID** — a genuine new feature
+   (query + timeline visualization), not a quick fix.
+3. **True multi-instance support** (external shared store + SignalR
+   backplane) — needs its own dedicated design pass (backend choice, hosting
+   budget, migration path) before any code.
+
+All three are candidates for a future initiative, not blockers on shipping
+what's in `staging` now.
