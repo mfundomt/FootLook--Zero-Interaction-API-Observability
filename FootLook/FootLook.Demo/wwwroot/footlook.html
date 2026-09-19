@@ -1977,8 +1977,10 @@
             }
 
             function shouldShowSiteConnector() {
-                var host = String(window.location.hostname || '').toLowerCase();
-                return host === 'footlook.co.za' || host.endsWith('.footlook.co.za');
+                // Connect-to-site is for observing your own frontend against your own
+                // FootLook-instrumented API (same project, any environment) - not gated
+                // to a specific production hostname.
+                return true;
             }
 
             function applySiteConnectorVisibility() {
@@ -2751,9 +2753,19 @@
                         var sessionId = createObservationId('sessionId');
                         var trackedUrl = buildTrackedSiteUrl(normalizedUrl, tabId, sessionId);
 
+                        // Deliberately NOT passing 'noopener' in the features string: per spec,
+                        // window.open() always returns null when noopener is set, regardless of
+                        // whether the popup actually opened - that made success undetectable and
+                        // also broke startObservedTabMonitoring() below (which needs a real
+                        // window reference to know when the tab is closed). Instead we get the
+                        // reference first, then sever window.opener manually - same security
+                        // benefit as rel=noopener, without losing the reference.
                         var openedTab = null;
                         try {
-                            openedTab = window.open(trackedUrl, '_blank', 'noopener,noreferrer');
+                            openedTab = window.open(trackedUrl, '_blank');
+                            if (openedTab) {
+                                try { openedTab.opener = null; } catch { }
+                            }
                         } catch {
                             openedTab = null;
                         }

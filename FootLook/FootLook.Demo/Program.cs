@@ -32,6 +32,23 @@ builder.Services.AddSwaggerGen(swagger =>
 builder.Services.AddHttpContextAccessor();
 //Register SignalR for real-time updates
 builder.Services.AddSignalR();
+
+// Demo-only CORS so a separately-hosted frontend (different port/origin) can be
+// driven through "Connect to site": it needs to send the X-Footlook-Session-Id /
+// X-Footlook-Tab-Id headers FootLook.Connect attaches, which requires an explicit
+// AllowedHeaders entry (not just AllowAnyOrigin) for the CORS preflight to pass.
+// A real deployment should scope this to its actual frontend origin(s) - this is
+// permissive only because the demo's whole point is to be poked at from anywhere.
+builder.Services.AddCors(cors =>
+{
+    cors.AddPolicy("FootLookDemoFrontend", policy =>
+    {
+        policy.SetIsOriginAllowed(_ => true)
+            .AllowAnyMethod()
+            .AllowAnyHeader()
+            .AllowCredentials();
+    });
+});
 builder.Services.AddFootLookMongoRepository();
 
 
@@ -111,6 +128,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
+app.UseCors("FootLookDemoFrontend");
 
 #region FootLook Middleware Flow (Manual for testing)
 //var sink = new InMemorySink();
