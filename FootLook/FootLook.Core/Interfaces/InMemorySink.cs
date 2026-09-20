@@ -1,54 +1,98 @@
-﻿using FootLook.Core.Models;
+using FootLook.Core.Models;
 using FootLook.Core.Interfaces;
-using System.Collections.Concurrent;
 using FootLook.Core.Options;
+using FootLook.Core.Security;
 using Microsoft.AspNetCore.Http;
 
 namespace FootLook.Core.Interfaces
 {
     /// <summary>
-    /// 
+    /// Holds captures in memory, each tagged with the observation sessions allowed to see
+    /// it (<see cref="CapturedRequest.ObserverSessionIds"/>). When given the
+    /// <see cref="ObservationSessionStore"/> it releases a session's captures the moment
+    /// that session ends - logout, token expiry or pruning - so history never outlives the
+    /// session that observed it and never piles up in memory.
+    /// All state is guarded by one lock. It is only ever taken briefly and never while
+    /// calling into the session store or anything else that could call back, so the
+    /// per-request hot path (ShadowMiddleware -> session store) can't deadlock with it.
     /// </summary>
     public class InMemorySink : IShadowSink, IShadowCaptureStore
     {
-        private readonly ConcurrentQueue<CapturedRequest> _request = new ConcurrentQueue<CapturedRequest>();
+        private readonly object _gate = new();
+        private Queue<CapturedRequest> _request = new();
         private readonly FootLookOptions _options;
+        private readonly ObservationSessionStore? _sessions;
         private long _approximateBytes;
 
-        public InMemorySink(FootLookOptions options)
+        public InMemorySink(FootLookOptions options, ObservationSessionStore? sessions = null)
         {
             _options = options;
+            _sessions = sessions;
+
+            if (_sessions is not null)
+            {
+                _sessions.SessionEnded += session => Clear(session.SessionId);
+            }
         }
 
         public Task WriteAsync(CapturedRequest request)
         {
-            PruneExpiredCaptures();
-
-            _request.Enqueue(request);
-            Interlocked.Add(ref _approximateBytes, EstimateSize(request));
-
-            // MaxInMemoryCaptures alone assumes captures are small; a byte cap catches the
-            // case where MaxBodyLength is configured high and captures are individually
-            // large, so a handful of them could otherwise balloon memory well past
-            // MaxInMemoryCaptures ever kicking in on count alone.
-            while (_request.Count > _options.MaxInMemoryCaptures || ExceedsByteCap())
+            lock (_gate)
             {
-                if (!_request.TryDequeue(out var evicted))
-                {
-                    break;
-                }
+                PruneExpiredCaptures();
 
-                Interlocked.Add(ref _approximateBytes, -EstimateSize(evicted));
+                _request.Enqueue(request);
+                _approximateBytes += EstimateSize(request);
+
+                // MaxInMemoryCaptures alone assumes captures are small; a byte cap catches the
+                // case where MaxBodyLength is configured high and captures are individually
+                // large, so a handful of them could otherwise balloon memory well past
+                // MaxInMemoryCaptures ever kicking in on count alone.
+                while (_request.Count > _options.MaxInMemoryCaptures || ExceedsByteCap())
+                {
+                    if (!_request.TryDequeue(out var evicted))
+                    {
+                        break;
+                    }
+
+                    _approximateBytes -= EstimateSize(evicted);
+                }
             }
+
+            ReleaseEndedObservers(request);
 
             return Task.CompletedTask;
 
         }
 
+        /// <summary>
+        /// A capture is tagged in ShadowMiddleware and written here some time later (the
+        /// queue sits in between). If one of its sessions ended in that gap, that session's
+        /// release already ran and found nothing, so the capture would keep the dead session
+        /// alive in its tags forever. Checking again after the write closes the gap: either
+        /// the session is already gone and is released here, or it is still live and its
+        /// eventual end runs after this write and releases it then.
+        /// </summary>
+        private void ReleaseEndedObservers(CapturedRequest request)
+        {
+            if (_sessions is null)
+            {
+                return;
+            }
+
+            foreach (var sessionId in request.ObserverSessionIds)
+            {
+                if (!_sessions.IsActive(sessionId))
+                {
+                    Clear(sessionId);
+                }
+            }
+        }
+
         private bool ExceedsByteCap()
         {
             var cap = _options.MaxInMemoryCaptureBytes;
-            return cap > 0 && Interlocked.Read(ref _approximateBytes) > cap;
+            return cap > 0 && _approximateBytes > cap;
         }
 
         private static long EstimateSize(CapturedRequest request)
@@ -69,58 +113,78 @@ namespace FootLook.Core.Interfaces
         }
 
         /// <summary>
-        /// Retrieves a read-only list containing all captured requests.
+        /// Retrieves a read-only list containing all captured requests, across every
+        /// session. Callers must filter on <see cref="CapturedRequest.ObserverSessionIds"/>
+        /// before showing anything to a developer.
         /// </summary>
         /// <returns>A read-only list of <see cref="CapturedRequest"/> objects representing all requests captured so far. The
         /// list will be empty if no requests have been captured.</returns>
         public IReadOnlyList<CapturedRequest> GetAll()
         {
-            PruneExpiredCaptures();
-            return _request.ToList();
+            lock (_gate)
+            {
+                PruneExpiredCaptures();
+                return _request.ToList();
+            }
         }
 
-        public void Clear(string? userId)
+        public void Clear(string? sessionId)
         {
-            if (string.IsNullOrWhiteSpace(userId))
+            if (string.IsNullOrWhiteSpace(sessionId))
             {
-                // No account -> do not perform a global wipe.
+                // No session -> do not perform a global wipe.
                 return;
             }
 
-            // ConcurrentQueue has no in-place filtered removal, so drain everything and
-            // re-enqueue what's left. A capture other accounts were also observing survives
-            // with this account removed from its observers; one only this account could see
-            // is dropped.
-            var retained = new List<CapturedRequest>();
-            while (_request.TryDequeue(out var captured))
+            lock (_gate)
             {
-                if (!captured.ObserverIds.Contains(userId, StringComparer.Ordinal))
+                // Nothing observed by this session (the common case for a repeat call, e.g.
+                // logout after the store was already cleared) -> nothing to rebuild.
+                if (!_request.Any(c => c.ObserverSessionIds.Contains(sessionId, StringComparer.Ordinal)))
                 {
-                    retained.Add(captured);
-                    continue;
+                    return;
                 }
 
-                var remaining = captured.ObserverIds.Where(id => !string.Equals(id, userId, StringComparison.Ordinal)).ToList();
-                if (remaining.Count > 0)
+                // A capture other sessions were also observing survives with this session
+                // removed from its observers; one only this session could see is dropped.
+                // Rebuilt in order so FIFO eviction and retention pruning keep working.
+                var retained = new Queue<CapturedRequest>(_request.Count);
+                long bytes = 0;
+                foreach (var captured in _request)
                 {
-                    retained.Add(captured with { ObserverIds = remaining });
+                    var keep = captured;
+                    if (captured.ObserverSessionIds.Contains(sessionId, StringComparer.Ordinal))
+                    {
+                        var remaining = captured.ObserverSessionIds
+                            .Where(id => !string.Equals(id, sessionId, StringComparison.Ordinal))
+                            .ToList();
+                        if (remaining.Count == 0)
+                        {
+                            continue;
+                        }
+
+                        keep = captured with { ObserverSessionIds = remaining };
+                    }
+
+                    retained.Enqueue(keep);
+                    bytes += EstimateSize(keep);
                 }
-            }
 
-            foreach (var captured in retained)
-            {
-                _request.Enqueue(captured);
+                _request = retained;
+                _approximateBytes = bytes;
             }
-
-            RecomputeApproximateBytes();
         }
 
         public CapturedRequest? GetById(Guid id)
         {
-            PruneExpiredCaptures();
-           return _request.FirstOrDefault(r => r.Id == id);
+            lock (_gate)
+            {
+                PruneExpiredCaptures();
+                return _request.FirstOrDefault(r => r.Id == id);
+            }
         }
 
+        // Caller holds _gate.
         private void PruneExpiredCaptures()
         {
             if (_options.RetentionDays <= 0)
@@ -133,26 +197,9 @@ namespace FootLook.Core.Interfaces
             {
                 if (_request.TryDequeue(out var evicted))
                 {
-                    Interlocked.Add(ref _approximateBytes, -EstimateSize(evicted));
+                    _approximateBytes -= EstimateSize(evicted);
                 }
             }
-        }
-
-        /// <summary>
-        /// Recomputes the byte estimate from scratch. Only needed after an operation like
-        /// Clear that removes an arbitrary subset of entries rather than dequeuing from the
-        /// front - incremental subtraction there would require knowing exactly what was
-        /// removed, which the drain-and-reinsert approach already discards.
-        /// </summary>
-        private void RecomputeApproximateBytes()
-        {
-            long total = 0;
-            foreach (var captured in _request)
-            {
-                total += EstimateSize(captured);
-            }
-
-            Interlocked.Exchange(ref _approximateBytes, total);
         }
     }
 }

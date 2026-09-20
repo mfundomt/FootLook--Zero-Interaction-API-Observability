@@ -72,13 +72,15 @@ namespace FootLook.Core.Models
         public string? ClientIp { get; init; }  
 
         /// <summary>
-        /// Ids of the accounts whose observation session was active when this request was
-        /// captured - and therefore the only accounts allowed to read it. Never serialized
-        /// (REST, SignalR or the capture file): it would leak other developers' account ids
-        /// to every observer of the same traffic.
+        /// Ids of the observation sessions (the footlook_sid claim) that were live when this
+        /// request was captured - and therefore the only sessions allowed to read it. A
+        /// session that starts later never sees it, and neither does a later session of the
+        /// same account. Sessions are removed from this list as they end and the capture is
+        /// deleted once none remain. Never serialized (REST, SignalR or the capture file):
+        /// it would expose other developers' session ids to every observer of the same traffic.
         /// </summary>
         [JsonIgnore]
-        public List<string> ObserverIds { get; init; } = new();
+        public List<string> ObserverSessionIds { get; init; } = new();
 
     }
 }

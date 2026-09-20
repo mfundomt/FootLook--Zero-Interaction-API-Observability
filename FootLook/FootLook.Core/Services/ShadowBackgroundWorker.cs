@@ -81,10 +81,10 @@ namespace FootLook.Core.Services
 
                         try
                         {
-                            if (capturedRequest.ObserverIds.Count > 0)
+                            if (capturedRequest.ObserverSessionIds.Count > 0)
                             {
                                 await _hub.Clients
-                                    .Groups(capturedRequest.ObserverIds.Select(CaptureHub.GroupNameForUser).ToList())
+                                    .Groups(capturedRequest.ObserverSessionIds.Select(CaptureHub.GroupNameForSession).ToList())
                                     .SendAsync("captureReceived", capturedRequest, cancellationToken: stoppingToken);
                             }
                             else
@@ -93,7 +93,7 @@ namespace FootLook.Core.Services
                                 // only captures while a session is active) - drop the broadcast
                                 // rather than fan it out to every connected dashboard.
                                 _logger.LogWarning(
-                                    "FootLook capture {Id} has no observers; skipping live broadcast to avoid a cross-account leak.",
+                                    "FootLook capture {Id} has no observers; skipping live broadcast to avoid a cross-session leak.",
                                     capturedRequest.Id);
                             }
                         }

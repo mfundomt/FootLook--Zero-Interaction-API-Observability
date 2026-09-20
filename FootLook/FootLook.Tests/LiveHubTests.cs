@@ -57,7 +57,7 @@ public class LiveHubTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Live_feed_delivers_only_the_connected_accounts_captures_without_observer_ids()
+    public async Task Live_feed_delivers_only_the_connected_sessions_captures_without_observer_ids()
     {
         await _host.RegisterAsync("a@example.com");
         await _host.RegisterAsync("b@example.com");
@@ -70,6 +70,7 @@ public class LiveHubTests : IAsyncLifetime
         var messageA = await ReceiveCaptureAsync(socketA);
         Assert.Equal("/hello", messageA.GetProperty("path").GetString());
         Assert.False(messageA.TryGetProperty("observerIds", out _));
+        Assert.False(messageA.TryGetProperty("observerSessionIds", out _));
 
         var tokenB = await _host.LoginTokenAsync("b@example.com");
         using var socketB = await ConnectAsync(tokenB);
@@ -81,7 +82,7 @@ public class LiveHubTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Live_feed_does_not_send_an_account_traffic_it_did_not_observe()
+    public async Task Live_feed_does_not_send_a_session_traffic_it_did_not_observe()
     {
         await _host.RegisterAsync("a@example.com");
         await _host.RegisterAsync("b@example.com");
@@ -97,6 +98,25 @@ public class LiveHubTests : IAsyncLifetime
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(600));
         var received = await TryReceiveCaptureAsync(socketB, cts.Token);
         Assert.Null(received);
+    }
+
+    [Fact]
+    public async Task Live_feed_is_per_session_so_an_old_session_of_the_same_account_gets_nothing_new()
+    {
+        await _host.RegisterAsync("a@example.com");
+        var oldToken = await _host.LoginTokenAsync("a@example.com");
+        using var oldSocket = await ConnectAsync(oldToken);
+        await _host.PostAsync("/footlook/auth/logout", oldToken); // session ends; its hub connection lingers
+
+        // Same account signs in again: a new session, with its own live feed.
+        var newToken = await _host.LoginTokenAsync("a@example.com");
+        using var newSocket = await ConnectAsync(newToken);
+        await _host.GetAsync("/hello");
+
+        Assert.Equal("/hello", (await ReceiveCaptureAsync(newSocket)).GetProperty("path").GetString());
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(600));
+        Assert.Null(await TryReceiveCaptureAsync(oldSocket, cts.Token));
     }
 
     // ---- raw SignalR JSON protocol -------------------------------------------------

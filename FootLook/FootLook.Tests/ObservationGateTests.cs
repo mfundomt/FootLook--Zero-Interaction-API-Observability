@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace FootLook.Tests;
 
-/// <summary>Capture only runs while somebody is logged in; and only what happened during that session is visible.</summary>
+/// <summary>Capture only runs while somebody is logged in; and a session only sees what happened during its own lifetime.</summary>
 public class ObservationGateTests : IAsyncLifetime
 {
     private FootLookTestHost _host = null!;
@@ -46,9 +46,12 @@ public class ObservationGateTests : IAsyncLifetime
         await _host.GetAsync("/other");
         await _host.WaitForCaptureAsync(second, "/other");
 
+        // The second login is a new observation session: nothing from the first one (deleted
+        // when it ended) and nothing from while nobody was logged in.
         var paths = await _host.GetCapturePathsAsync(second);
         Assert.DoesNotContain("/after-logout", paths);
-        Assert.Contains("/hello", paths); // captured during the earlier session, still owned by this account
+        Assert.DoesNotContain("/hello", paths);
+        Assert.Equal(new[] { "/other" }, paths);
     }
 
     [Fact]

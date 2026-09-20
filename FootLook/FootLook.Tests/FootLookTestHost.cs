@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FootLook.Core.Extensions;
+using FootLook.Core.Interfaces;
 using FootLook.Core.Options;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -29,6 +30,9 @@ public sealed class FootLookTestHost : IAsyncDisposable
     public TestServer Server { get; }
     public FootLookOptions Options { get; }
     public IServiceProvider Services => _app.Services;
+
+    /// <summary>The in-memory capture store, across every session (bypasses the per-session read scoping).</summary>
+    public IShadowCaptureStore Store => Services.GetRequiredService<IShadowCaptureStore>();
 
     private FootLookTestHost(WebApplication app, string userStorePath)
     {
@@ -130,7 +134,14 @@ public sealed class FootLookTestHost : IAsyncDisposable
     public static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response) =>
         JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
-    /// <summary>Paths of every capture the token's account can see (newest first).</summary>
+    /// <summary>The observation session id a live token belongs to (via /auth/me).</summary>
+    public async Task<string> GetSessionIdAsync(string token)
+    {
+        using var me = await ReadJsonAsync(await GetAsync("/footlook/auth/me", token));
+        return me.RootElement.GetProperty("sessionId").GetString()!;
+    }
+
+    /// <summary>Paths of every capture the token's session can see (newest first).</summary>
     public async Task<List<string>> GetCapturePathsAsync(string token)
     {
         var response = await GetAsync("/footlook/captures?pageSize=100", token);
@@ -156,7 +167,7 @@ public sealed class FootLookTestHost : IAsyncDisposable
         return null;
     }
 
-    /// <summary>Polls until the account's capture list contains the path (captures are written asynchronously).</summary>
+    /// <summary>Polls until the session's capture list contains the path (captures are written asynchronously).</summary>
     public Task WaitForCaptureAsync(string token, string path) =>
         WaitUntilAsync(async () => (await GetCapturePathsAsync(token)).Contains(path), $"capture of {path}");
 

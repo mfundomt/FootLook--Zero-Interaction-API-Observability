@@ -2,7 +2,8 @@ namespace FootLook.Core.Models
 {
     /// <summary>
     /// A developer account on a FootLook instance. Only accounts can log in, and logging in
-    /// is what opens the observation session that turns capture on - see
+    /// is what opens an observation session (one per login, each with its own capture set)
+    /// that turns capture on - see
     /// <see cref="Security.ObservationSessionStore"/>.
     /// </summary>
     public sealed record FootLookUser(

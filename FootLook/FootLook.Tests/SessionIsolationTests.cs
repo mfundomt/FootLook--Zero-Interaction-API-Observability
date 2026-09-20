@@ -3,8 +3,8 @@ using System.Text.Json;
 
 namespace FootLook.Tests;
 
-/// <summary>An account only ever sees traffic captured while its own session was open.</summary>
-public class AccountIsolationTests : IAsyncLifetime
+/// <summary>A session only ever sees traffic captured while it was open; A and B are two sessions (here of two accounts).</summary>
+public class SessionIsolationTests : IAsyncLifetime
 {
     private FootLookTestHost _host = null!;
     private string _tokenA = null!;
@@ -33,7 +33,7 @@ public class AccountIsolationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Traffic_captured_while_only_A_was_logged_in_is_invisible_to_B()
+    public async Task Traffic_captured_while_only_A_was_logged_in_is_invisible_to_Bs_session()
     {
         await ArrangeAsync();
 
@@ -47,7 +47,7 @@ public class AccountIsolationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Capture_by_id_is_404_for_an_account_that_did_not_observe_it()
+    public async Task Capture_by_id_is_404_for_a_session_that_did_not_observe_it()
     {
         await ArrangeAsync();
         var aOnly = await _host.GetCaptureIdAsync(_tokenA, "/hello");
@@ -63,7 +63,7 @@ public class AccountIsolationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Unknown_capture_id_and_other_accounts_capture_id_look_identical()
+    public async Task Unknown_capture_id_and_other_sessions_capture_id_look_identical()
     {
         await ArrangeAsync();
         var aOnly = await _host.GetCaptureIdAsync(_tokenA, "/hello");
@@ -76,7 +76,7 @@ public class AccountIsolationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Every_capture_read_route_is_scoped_to_the_caller()
+    public async Task Every_capture_read_route_is_scoped_to_the_callers_session()
     {
         await ArrangeAsync();
 
@@ -159,7 +159,7 @@ public class AccountIsolationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Logging_out_A_does_not_stop_capture_for_B_and_A_stops_seeing_new_traffic()
+    public async Task Logging_out_A_does_not_stop_capture_for_B_and_A_signing_back_in_sees_nothing_old()
     {
         await ArrangeAsync();
         await _host.PostAsync("/footlook/auth/logout", _tokenA);
@@ -167,14 +167,19 @@ public class AccountIsolationTests : IAsyncLifetime
         await _host.GetAsync("/hello");
         await FootLookTestHost.WaitUntilAsync(async () => (await _host.GetCapturePathsAsync(_tokenB)).Count(p => p == "/hello") == 1, "B sees the new /hello");
 
-        // A logs in again: the traffic from while A was out is not visible to A.
+        // A logs in again: a new session, so nothing from A's first session and nothing
+        // from while A was signed out.
         var a2 = await _host.LoginTokenAsync("a@example.com");
-        var aPaths = await _host.GetCapturePathsAsync(a2);
-        Assert.Equal(1, aPaths.Count(p => p == "/hello")); // only the one from A's first session
+        Assert.Empty(await _host.GetCapturePathsAsync(a2));
+
+        // B is unaffected: it keeps the traffic that overlapped its session.
+        var bPaths = await _host.GetCapturePathsAsync(_tokenB);
+        Assert.Contains("/other", bPaths);
+        Assert.Contains("/hello", bPaths);
     }
 
     [Fact]
-    public async Task Same_account_logged_in_twice_has_one_copy_of_each_capture()
+    public async Task Same_account_logged_in_twice_has_one_copy_of_each_capture_per_session()
     {
         var t1 = await _host.LoginTokenAsync("a@example.com");
         var t2 = await _host.LoginTokenAsync("a@example.com");
@@ -187,13 +192,15 @@ public class AccountIsolationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Json_responses_never_expose_observer_ids_or_other_accounts_ids()
+    public async Task Json_responses_never_expose_observer_session_ids_or_other_accounts_ids()
     {
         await ArrangeAsync();
         using var meB = await FootLookTestHost.ReadJsonAsync(await _host.GetAsync("/footlook/auth/me", _tokenB));
         using var meA = await FootLookTestHost.ReadJsonAsync(await _host.GetAsync("/footlook/auth/me", _tokenA));
         var idA = meA.RootElement.GetProperty("user").GetProperty("id").GetString()!;
         var idB = meB.RootElement.GetProperty("user").GetProperty("id").GetString()!;
+        var sidA = meA.RootElement.GetProperty("sessionId").GetString()!;
+        var sidB = meB.RootElement.GetProperty("sessionId").GetString()!;
         var shared = await _host.GetCaptureIdAsync(_tokenB, "/other");
 
         foreach (var route in new[]
@@ -206,6 +213,9 @@ public class AccountIsolationTests : IAsyncLifetime
         {
             var raw = await (await _host.GetAsync(route, _tokenB)).Content.ReadAsStringAsync();
             Assert.DoesNotContain("observerIds", raw, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("observerSessionIds", raw, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(sidA, raw);
+            Assert.DoesNotContain(sidB, raw);
             Assert.DoesNotContain(idA, raw);
             Assert.DoesNotContain(idB, raw);
         }

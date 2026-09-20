@@ -73,6 +73,9 @@ namespace FootLook.Core.Extensions
             // TryAdd so a host can register its own account store before AddFootLook.
             services.TryAddSingleton<IFootLookUserStore, JsonFileUserStore>();
             services.AddSingleton<ObservationSessionStore>();
+            // Ends expired sessions on a timer so their captures are released even when no
+            // request notices the expiry (InMemorySink subscribes to the store's SessionEnded).
+            services.AddHostedService<ObservationSessionSweeper>();
             services.AddSingleton<FootLookTokenService>();
             // Validates Microsoft (Entra ID) ID tokens for POST {EndpointBasePath}/auth/microsoft. TryAdd so a
             // host (or a test) can supply its own, e.g. with different key retrieval.

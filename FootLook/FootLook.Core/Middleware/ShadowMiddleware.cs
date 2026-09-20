@@ -202,9 +202,10 @@ namespace FootLook.Core.Middleware
             // Observation only exists while a developer is logged in to FootLook. With no
             // active session nothing is recorded at all - not queued, not held back for
             // later - so traffic from before anyone signed in (or after they signed out)
-            // never becomes visible to whoever logs in next.
-            var observerIds = _sessions.GetActiveUserIds();
-            if (observerIds.Count == 0)
+            // never becomes visible to whoever logs in next. Each capture is tagged with
+            // the ids of the sessions live right now, and only those sessions can read it.
+            var observerSessionIds = _sessions.GetActiveSessionIds();
+            if (observerSessionIds.Count == 0)
             {
                 await _next(context);
                 return;
@@ -451,7 +452,7 @@ namespace FootLook.Core.Middleware
                             : "Endpoint threw before a response body was produced",
                         ClientIp = failureClientIp,
                         UserAgent = failureUserAgent,
-                        ObserverIds = new List<string>(observerIds),
+                        ObserverSessionIds = new List<string>(observerSessionIds),
                     };
 
                     await _queue.EnqueueAsync(failureCapturedRequest);
@@ -546,7 +547,7 @@ namespace FootLook.Core.Middleware
                     ResponseBodySkippedReason = responseBodySkippedReason,
                     ClientIp = anonymizedClientIp,
                     UserAgent = anonymizedUserAgent,
-                    ObserverIds = new List<string>(observerIds),
+                    ObserverSessionIds = new List<string>(observerSessionIds),
                 };
 
                 await _queue.EnqueueAsync(capturedRequest);

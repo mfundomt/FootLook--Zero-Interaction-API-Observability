@@ -6,16 +6,16 @@ namespace FootLook.Tests;
 public class CapturedRequestSerializationTests
 {
     [Fact]
-    public void ObserverIds_are_never_serialized()
+    public void ObserverSessionIds_are_never_serialized()
     {
-        var capture = new CapturedRequest { Path = "/x", ObserverIds = new List<string> { "user-secret-id" } };
+        var capture = new CapturedRequest { Path = "/x", ObserverSessionIds = new List<string> { "session-secret-id" } };
 
         var json = JsonSerializer.Serialize(capture);
         var webJson = JsonSerializer.Serialize(capture, new JsonSerializerOptions(JsonSerializerDefaults.Web));
 
-        Assert.DoesNotContain("observerIds", json, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("observerIds", webJson, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("user-secret-id", json);
+        Assert.DoesNotContain("observerSessionIds", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("observerSessionIds", webJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("session-secret-id", json);
     }
 
     [Fact]

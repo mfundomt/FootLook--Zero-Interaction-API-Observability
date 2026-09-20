@@ -99,6 +99,11 @@ namespace FootLook.Core.Options
 
         public List<string> AllowedContentType { get; set; } = new List<string>() { "application/json", "application/xml", "text/plain", "application/x-www-form-urlencoded" };
 
+        /// <summary>
+        /// Max captures held in memory across all live observation sessions (a capture seen
+        /// by several sessions is stored once). Captures are also released when the sessions
+        /// that observed them end, so this only bounds a single long-running session.
+        /// </summary>
         public int MaxInMemoryCaptures { get; set; } = 1000;
 
         /// <summary>
@@ -150,8 +155,18 @@ namespace FootLook.Core.Options
         /// <summary>
         /// How long an issued bearer token - and the observation session it opened - stays
         /// valid before the developer must log in again via {EndpointBasePath}/auth/login.
+        /// When it lapses the session ends and its captures are released, exactly as on
+        /// logout - each login is its own observation session with its own capture set.
         /// </summary>
         public double TokenLifetimeHours { get; set; } = 8;
+
+        /// <summary>
+        /// How often (seconds) sessions whose token has expired are swept out so their
+        /// captures are released even when no request notices the expiry. Sessions that end
+        /// by logout, or that a request happens to find expired, are released immediately;
+        /// this only bounds how long an idle host holds an expired session's captures.
+        /// </summary>
+        public int SessionSweepIntervalSeconds { get; set; } = 30;
 
         /// <summary>
         /// Query string parameter the live SignalR hub accepts a bearer token on, since

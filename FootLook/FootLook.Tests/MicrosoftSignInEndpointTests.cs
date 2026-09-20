@@ -94,6 +94,24 @@ public class MicrosoftSignInEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Signing_out_and_back_in_with_Microsoft_starts_a_fresh_empty_observation_session()
+    {
+        using var first = await JsonOf(await SignInAsync("register"));
+        var token1 = first.RootElement.GetProperty("token").GetString()!;
+        await _host.GetAsync("/hello");
+        await _host.WaitForCaptureAsync(token1, "/hello");
+
+        Assert.Equal(HttpStatusCode.OK, (await _host.PostAsync("/footlook/auth/logout", token1)).StatusCode);
+
+        using var second = await JsonOf(await SignInAsync("login", acceptedTerms: false));
+        var token2 = second.RootElement.GetProperty("token").GetString()!;
+
+        // Same Microsoft account, but a new session: nothing from the old one.
+        Assert.Empty(await _host.GetCapturePathsAsync(token2));
+        Assert.Empty(_host.Services.GetRequiredService<FootLook.Core.Interfaces.IShadowCaptureStore>().GetAll());
+    }
+
+    [Fact]
     public async Task First_account_is_admin_and_the_next_is_not_and_the_admin_token_can_use_admin_routes()
     {
         using var first = await JsonOf(await SignInAsync("register", s => s.Oid = "first"));

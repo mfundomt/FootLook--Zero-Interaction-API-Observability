@@ -20,17 +20,25 @@ namespace FootLook.Core.Extensions
         private const int MaxPasswordLength = 128;
 
         /// <summary>
-        /// The logged-in account's id. Every endpoint that reads or deletes captures must go
-        /// through this (and filter on <see cref="IsObservedBy"/>) so per-account isolation
-        /// can't be forgotten on a new route. The routes are all behind the user policy, so
-        /// an empty id here only happens if that wiring is broken - and then it matches no
-        /// capture rather than all of them.
+        /// The logged-in account's id. Only for account details (e.g. /auth/me) - never for
+        /// deciding which captures a caller may see; that is per session, see
+        /// <see cref="GetSessionId"/>.
         /// </summary>
         private static string GetUserId(HttpContext httpContext) =>
             httpContext.User.GetUserId() ?? string.Empty;
 
-        private static bool IsObservedBy(CapturedRequest capture, string userId) =>
-            userId.Length > 0 && capture.ObserverIds.Contains(userId, StringComparer.Ordinal);
+        /// <summary>
+        /// The caller's observation session id (the token's footlook_sid claim). Every
+        /// endpoint that reads or deletes captures must go through this (and filter on
+        /// <see cref="IsObservedBy"/>) so per-session isolation can't be forgotten on a new
+        /// route. The routes are all behind the user policy, so an empty id here only happens
+        /// if that wiring is broken - and then it matches no capture rather than all of them.
+        /// </summary>
+        private static string GetSessionId(HttpContext httpContext) =>
+            httpContext.User.GetSessionId() ?? string.Empty;
+
+        private static bool IsObservedBy(CapturedRequest capture, string sessionId) =>
+            sessionId.Length > 0 && capture.ObserverSessionIds.Contains(sessionId, StringComparer.Ordinal);
 
         private static string? ValidateEmail(string? email)
         {
@@ -108,8 +116,9 @@ namespace FootLook.Core.Extensions
                 return Results.Created($"{prefix}/auth/me", FootLookUserSummary.From(user));
             });
 
-            // Generates the bearer token and, in the same step, opens the account's
-            // observation session - capture stays off until somebody has logged in.
+            // Generates the bearer token and, in the same step, opens a new observation
+            // session for this login (with its own, initially empty, capture set) - capture
+            // stays off until somebody has logged in.
             endpoints.MapPost($"{prefix}/auth/login", (IFootLookUserStore users, FootLookTokenService tokenService, FootLookLoginRequest? request) =>
             {
                 var email = request?.Email?.Trim() ?? string.Empty;
@@ -136,8 +145,8 @@ namespace FootLook.Core.Extensions
             endpoints.MapFootLookMicrosoftSignIn(prefix);
 
             // Everything else requires a valid bearer token (obtained above) whose
-            // observation session is still open. Reads/writes that only affect the caller's
-            // own captures live in `group`; actions that affect every caller at once
+            // observation session is still open. Reads/writes that only touch the caller's
+            // own session's captures live in `group`; actions that affect every caller at once
             // (pause/resume, privacy-audit clear, self-heal/setup) live in `adminGroup` and
             // additionally require an admin token.
             var group = endpoints.MapGroup(prefix).RequireAuthorization(FootLookAuthDefaults.UserPolicy);
@@ -179,10 +188,16 @@ namespace FootLook.Core.Extensions
             });
 
             // Ends this login's observation session. The token stops validating immediately,
-            // and if no other account is logged in, capture stops.
-            group.MapPost("/auth/logout", (HttpContext httpContext, ObservationSessionStore sessions) =>
+            // this session's captures are deleted (ones another live session also observed
+            // stay for that session), and if no other session is live, capture stops. Another
+            // login of the same account is a separate session and is untouched.
+            group.MapPost("/auth/logout", (HttpContext httpContext, ObservationSessionStore sessions, IShadowCaptureStore store) =>
             {
-                sessions.End(httpContext.User.GetSessionId());
+                var sessionId = GetSessionId(httpContext);
+                sessions.End(sessionId);
+                // The capture store also releases on the session-ended event; doing it here
+                // as well keeps logout correct for a store that isn't wired to that event.
+                store.Clear(sessionId);
                 return Results.Ok(new { message = "Signed out. Observation session ended." });
             });
 
@@ -270,9 +285,9 @@ namespace FootLook.Core.Extensions
               string? correlationId = null, string sortBy = "timestamp", string sortDirection = "desc", bool failedOnly = false, string? pathContains = null) =>
             {
                 var captures = store.GetAll().AsEnumerable();
-                var userId = GetUserId(httpContext);
+                var sessionId = GetSessionId(httpContext);
 
-                captures = captures.Where(c => IsObservedBy(c, userId));
+                captures = captures.Where(c => IsObservedBy(c, sessionId));
 
                 if (failedOnly)
                 {
@@ -342,9 +357,9 @@ namespace FootLook.Core.Extensions
             group.MapGet("/captures/stats",
             (HttpContext httpContext, IShadowCaptureStore store) =>
             {
-                var userId = GetUserId(httpContext);
+                var sessionId = GetSessionId(httpContext);
                 var captures = store.GetAll()
-                    .Where(c => IsObservedBy(c, userId))
+                    .Where(c => IsObservedBy(c, sessionId))
                     .ToList();
 
                 var totalRequests = captures.Count;
@@ -419,10 +434,10 @@ namespace FootLook.Core.Extensions
                    double minConfidence = 0.65,
                    string? siteHost = null) =>
             {
-                var userId = GetUserId(httpContext);
+                var sessionId = GetSessionId(httpContext);
                 var orderedCaptures = store
                     .GetAll()
-                    .Where(c => IsObservedBy(c, userId))
+                    .Where(c => IsObservedBy(c, sessionId))
                     .OrderByDescending(c => c.TimestampUtc)
                     .ToList();
                 var totalEvaluated = orderedCaptures.Count;
@@ -534,14 +549,14 @@ namespace FootLook.Core.Extensions
                     return Results.BadRequest("footlookSessionId and footlookTabId are required.");
                 }
 
-                var userId = GetUserId(httpContext);
+                var sessionId = GetSessionId(httpContext);
                 var threshold = Math.Clamp(minConfidence, 0.0, 1.0);
                 var currentPage = Math.Max(1, page);
                 var size = Math.Clamp(pageSize, 1, 100);
 
                 var scored = store
                     .GetAll()
-                    .Where(c => IsObservedBy(c, userId))
+                    .Where(c => IsObservedBy(c, sessionId))
                     .OrderByDescending(c => c.TimestampUtc)
                     .Select(c =>
                     {
@@ -576,19 +591,20 @@ namespace FootLook.Core.Extensions
                 "/captures/{id:guid}",
                 (HttpContext httpContext, IShadowCaptureStore store, Guid id) =>
                 {
-                    var userId = GetUserId(httpContext);
+                    var sessionId = GetSessionId(httpContext);
                     var capture = store.GetById(id);
 
-                    // Not-observed-by-you is reported the same as "not found" so a caller can't
-                    // use this route to probe for the existence of another account's captures.
-                    return capture is not null && IsObservedBy(capture, userId)
+                    // Not-observed-by-your-session is reported the same as "not found" so a caller
+                    // can't use this route to probe for the existence of captures from before
+                    // their session or from another session.
+                    return capture is not null && IsObservedBy(capture, sessionId)
             ? Results.Ok(capture)
             : Results.NotFound();
                 });
 
             group.MapDelete("/captures", (HttpContext httpContext, IShadowCaptureStore store) =>
             {
-                store.Clear(GetUserId(httpContext));
+                store.Clear(GetSessionId(httpContext));
                 return Results.Ok(new
                 {
                     MessageProcessingHandler = "FootLook captures cleared."
@@ -605,10 +621,10 @@ namespace FootLook.Core.Extensions
                     return Results.BadRequest("count must be greater than zero.");
                 }
 
-                var userId = GetUserId(httpContext);
+                var sessionId = GetSessionId(httpContext);
                 var captures = store
                     .GetAll()
-                    .Where(c => IsObservedBy(c, userId))
+                    .Where(c => IsObservedBy(c, sessionId))
                     .OrderByDescending(c => c.TimestampUtc)
                     .Take(count)
                     .ToList();
@@ -617,9 +633,9 @@ namespace FootLook.Core.Extensions
             });
 
             // Pause/resume affect capture for every caller at once (ShadowMiddleware observes
-            // all host traffic, not just the calling API key's own traffic), so these require
-            // an admin key rather than the baseline key used for reading/clearing one's own
-            // capture scope.
+            // all host traffic, not just the calling session's own traffic), so these require
+            // an admin account rather than the baseline access used for reading/clearing one's own
+            // session's captures.
             adminGroup.MapPost("/captures/pause", (CaptureRuntimeState state, FootLookOptions options) =>
             {
                 state.Pause();

@@ -13,8 +13,9 @@ namespace FootLook.Core.Security
     /// Validation of tokens on incoming requests is handled separately by the JwtBearer
     /// authentication handler (registered in FootLookServiceCollectionExtensions), which is
     /// given the same signing key via <see cref="SigningKey"/> so the two stay consistent.
-    /// Issuing a token also starts the account's observation session - the two are one step,
-    /// so there is no way to hold a valid token whose session was never opened.
+    /// Issuing a token also starts a new observation session for that login (a fresh session
+    /// id, so a fresh capture set, even for an account that signed in before) - the two are
+    /// one step, so there is no way to hold a valid token whose session was never opened.
     /// </summary>
     public class FootLookTokenService
     {

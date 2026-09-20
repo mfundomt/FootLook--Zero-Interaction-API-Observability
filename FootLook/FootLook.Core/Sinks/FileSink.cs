@@ -5,6 +5,16 @@ using FootLook.Core.Options;
 
 namespace FootLook.Core.Sinks
 {
+    /// <summary>
+    /// Appends every capture to captures.jsonl next to the host's binaries.
+    /// Session scoping does NOT apply here: <see cref="CapturedRequest.ObserverSessionIds"/> is
+    /// not serialized, so the file carries no session tags, and it is one shared append-only
+    /// log (rotated by size, expired by RetentionDays) that can't be filtered per session.
+    /// Nothing in the API reads it back, but logging out does NOT delete a session's
+    /// captures from this file - the "captures are cleared when the session ends" rule holds
+    /// for the in-memory store only. Purging per session would mean tagging every line and
+    /// rewriting a file of up to MaxFileSizeBytes on every logout, which is not done here.
+    /// </summary>
     public class FileSink : IShadowSink
     {
         private readonly string _filepath;
