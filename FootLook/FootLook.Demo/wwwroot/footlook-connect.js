@@ -27,19 +27,14 @@
  * API should carry these headers, not calls to Google Fonts, analytics, etc. Omit
  * it (or pass an empty array) to tag every request instead.
  *
- * If your frontend and API are on different origins, your API's CORS policy must:
- *   - allow the X-Footlook-Session-Id and X-Footlook-Tab-Id request headers (add
- *     them to Access-Control-Allow-Headers), and
- *   - allow credentials (AllowCredentials(), with a specific allowed origin, not
- *     AllowAnyOrigin - the two are mutually exclusive by spec), since tagged
- *     requests are sent with credentials so FootLook's footlook_scope_id cookie
- *     travels with them; without it, the capture would still get tagged with the
- *     right session/tab headers but would land in a scope the dashboard can never
- *     see, and would never show up filtered.
- * This cookie-sharing only works when frontend and API are same-site (same domain,
- * different port, or a shared parent domain) - a genuinely cross-site pair (e.g.
- * unrelated domains) additionally needs the API's scope cookie issued with
- * SameSite=None; Secure.
+ * If your frontend and API are on different origins, your API's CORS policy must
+ * allow the X-Footlook-Session-Id and X-Footlook-Tab-Id request headers (add them
+ * to Access-Control-Allow-Headers). Nothing else is needed: no cookies are sent,
+ * so AllowCredentials() and SameSite settings are not required and AllowAnyOrigin
+ * works fine. FootLook attributes each capture server-side to whichever developer
+ * accounts currently have an active observation session (i.e. are signed in to the
+ * dashboard); the session/tab headers then narrow the dashboard view to the tab
+ * that was opened via "Connect to site".
  */
 (function (global) {
     'use strict';
@@ -122,16 +117,7 @@
                     var headers = new Headers(requestInit.headers || (input && input.headers) || {});
                     headers.set(HEADER_SESSION, sessionId);
                     headers.set(HEADER_TAB, tabId);
-                    // FootLook's dashboard scopes captures by its own footlook_scope_id
-                    // cookie. Without 'include', a cross-origin fetch (your frontend's own
-                    // origin vs. your API's) never sends that cookie, so the request lands
-                    // in a scope the dashboard can never query back - the tagging headers
-                    // above would be set correctly but the capture would still be
-                    // invisible. This only carries the cookie when the API is same-site
-                    // (e.g. same domain, different port, or subdomains sharing a cookie
-                    // domain) - a genuinely cross-site API/frontend pair needs the API's
-                    // scope cookie issued with SameSite=None; Secure to work at all.
-                    requestInit = Object.assign({}, requestInit, { headers: headers, credentials: 'include' });
+                    requestInit = Object.assign({}, requestInit, { headers: headers });
                 }
 
                 return originalFetch.call(this, input, requestInit);
@@ -152,7 +138,6 @@
                     try {
                         this.setRequestHeader(HEADER_SESSION, sessionId);
                         this.setRequestHeader(HEADER_TAB, tabId);
-                        this.withCredentials = true;
                     } catch {
                         /* header already sent or request already opened in a state that
                            disallows setRequestHeader - nothing to do. */

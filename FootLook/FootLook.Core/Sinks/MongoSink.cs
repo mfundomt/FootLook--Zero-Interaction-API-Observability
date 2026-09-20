@@ -5,6 +5,9 @@ using MongoDB.Driver;
 
 namespace FootLook.Core.Sinks;
 
+// Disabled (not registered). If it is revived, it must persist CapturedRequest.ObserverSessionIds
+// (or otherwise scope by observation session) and delete a session's documents when the
+// session ends, or captures would outlive the session that observed them.
 public class MongoSink /*: IShadowSink*/
 {
     //private readonly IMongoCollection<MongoCapturedRequest> _collection;

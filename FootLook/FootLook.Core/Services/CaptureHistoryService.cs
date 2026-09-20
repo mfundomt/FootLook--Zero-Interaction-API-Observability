@@ -8,6 +8,12 @@ using System.Threading.Tasks;
 
 namespace FootLook.Core.Services
 {
+    /// <summary>
+    /// Reads captures back from captures.jsonl (written by FileSink). Not used by any
+    /// FootLook endpoint. Those lines carry no session tags, so anything exposing this to
+    /// developers would have to scope it to the caller's observation session itself - it
+    /// must not be wired to a route as-is.
+    /// </summary>
     public class CaptureHistoryService
     {
         private readonly string _filePath;

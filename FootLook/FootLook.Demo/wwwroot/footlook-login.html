@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FootLook — Sign in</title>
+    <script>
+        // Runs synchronously before the stylesheet is applied, so the stored theme is
+        // active on first paint (same key as the dashboard: footlook_theme).
+        (function () {
+            try {
+                var stored = localStorage.getItem('footlook_theme');
+                if (stored === 'dark' || stored === 'light') {
+                    document.documentElement.setAttribute('data-theme', stored);
+                }
+            } catch (err) {
+                // Storage blocked - fall back to the OS preference only.
+            }
+        })();
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
+
+        :root {
+            --bg: #f5f9ff;
+            --panel: #ffffff;
+            --panel-alt: #f8fbff;
+            --panel-raised: #ffffff;
+            --border: #d0d7de;
+            --border-soft: #e6edf5;
+            --text-primary: #1f2328;
+            --text-secondary: #3b424a;
+            --text-muted: #57606a;
+            --accent: #22C55E;
+            --accent-soft: rgba(0,120,212,0.14);
+            --live: #0078d4;
+            --live-soft: rgba(0,120,212,0.14);
+            --lime: #22C55E;
+            --lime-soft: rgba(34, 197, 94, 0.14);
+            --warn: #9a6700;
+            --warn-soft: rgba(154,103,0,0.16);
+            --crit: #d13438;
+            --crit-soft: rgba(209,52,56,0.14);
+            --radius: 10px;
+            --radius-sm: 6px;
+            --mono: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            --sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            --font-primary: var(--sans);
+            --font-secondary: var(--mono);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                --bg: #0d1117;
+                --panel: #151b23;
+                --panel-alt: #10151c;
+                --panel-raised: #1c232d;
+                --border: #2d3542;
+                --border-soft: #232a35;
+                --text-primary: #e6edf5;
+                --text-secondary: #c3ccd6;
+                --text-muted: #8b96a3;
+                --accent-soft: rgba(0,120,212,0.22);
+                --live-soft: rgba(0,120,212,0.22);
+                --lime-soft: rgba(34, 197, 94, 0.22);
+                --warn-soft: rgba(154,103,0,0.26);
+                --crit-soft: rgba(209,52,56,0.22);
+            }
+        }
+
+        :root[data-theme="dark"] {
+            --bg: #0d1117;
+            --panel: #151b23;
+            --panel-alt: #10151c;
+            --panel-raised: #1c232d;
+            --border: #2d3542;
+            --border-soft: #232a35;
+            --text-primary: #e6edf5;
+            --text-secondary: #c3ccd6;
+            --text-muted: #8b96a3;
+            --accent-soft: rgba(0,120,212,0.22);
+            --live-soft: rgba(0,120,212,0.22);
+            --lime-soft: rgba(34, 197, 94, 0.22);
+            --warn-soft: rgba(154,103,0,0.26);
+            --crit-soft: rgba(209,52,56,0.22);
+        }
+
+        * { box-sizing: border-box; }
+
+        html, body { margin: 0; padding: 0; }
+
+        body {
+            background: radial-gradient(1200px 600px at 15% -10%, rgba(0,120,212,0.12), transparent 60%), var(--bg);
+            color: var(--text-primary);
+            font-family: var(--font-primary);
+            -webkit-font-smoothing: antialiased;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px 16px;
+        }
+
+        a, button, input { font-family: inherit; }
+
+        button { cursor: pointer; }
+
+        :focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+            border-radius: 4px;
+        }
+
+        .card {
+            width: 100%;
+            max-width: 420px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 28px 28px 24px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.06);
+        }
+
+        .card-top {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+
+        .brand {
+            font-family: var(--font-secondary);
+            font-size: 11px;
+            letter-spacing: .18em;
+            font-weight: 600;
+            color: var(--accent);
+            text-transform: uppercase;
+            margin: 0 0 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+            .brand::before {
+                content: '';
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                background: var(--accent);
+                box-shadow: 0 0 8px var(--accent);
+            }
+
+        h1 {
+            font-size: 22px;
+            font-weight: 600;
+            margin: 0 0 6px;
+            letter-spacing: -.01em;
+        }
+
+        .lede {
+            margin: 0;
+            font-size: 13.5px;
+            color: var(--text-secondary);
+            line-height: 1.45;
+        }
+
+        .theme-toggle-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: var(--panel-raised);
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+
+            .theme-toggle-btn:hover {
+                border-color: var(--live);
+                color: var(--text-primary);
+            }
+
+        .tabs {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px;
+            padding: 4px;
+            background: var(--panel-alt);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius);
+            margin-bottom: 18px;
+        }
+
+        .tab {
+            border: 0;
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 13px;
+            font-weight: 600;
+            padding: 8px 10px;
+            border-radius: var(--radius-sm);
+        }
+
+            .tab:hover { color: var(--text-primary); }
+
+            .tab[aria-selected="true"] {
+                background: var(--panel-raised);
+                color: var(--text-primary);
+                box-shadow: 0 0 0 1px var(--border);
+            }
+
+        .field { margin-bottom: 14px; }
+
+        label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        .optional {
+            font-weight: 400;
+            color: var(--text-muted);
+        }
+
+        input[type="text"], input[type="email"], input[type="password"] {
+            width: 100%;
+            padding: 10px 12px;
+            font-size: 14px;
+            color: var(--text-primary);
+            background: var(--panel-alt);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+        }
+
+            input::placeholder { color: var(--text-muted); }
+
+            input:focus-visible {
+                outline: none;
+                border-color: var(--live);
+                box-shadow: 0 0 0 3px var(--live-soft);
+            }
+
+            input[aria-invalid="true"] { border-color: var(--crit); }
+
+        .pw-wrap { position: relative; }
+
+            .pw-wrap input { padding-right: 64px; }
+
+        .pw-toggle {
+            position: absolute;
+            top: 50%;
+            right: 6px;
+            transform: translateY(-50%);
+            border: 0;
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 12px;
+            font-weight: 600;
+            padding: 4px 8px;
+            border-radius: var(--radius-sm);
+        }
+
+            .pw-toggle:hover { color: var(--text-primary); }
+
+        .hint {
+            margin: 6px 0 0;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .field-error {
+            margin: 6px 0 0;
+            font-size: 12px;
+            color: var(--crit);
+        }
+
+        .message {
+            margin: 0 0 14px;
+            padding: 10px 12px;
+            font-size: 13px;
+            border-radius: var(--radius-sm);
+            border: 1px solid transparent;
+        }
+
+            .message.error {
+                color: var(--crit);
+                background: var(--crit-soft);
+                border-color: var(--crit);
+            }
+
+            .message.success {
+                color: var(--text-primary);
+                background: var(--lime-soft);
+                border-color: var(--lime);
+            }
+
+        .message-region:empty { display: none; }
+
+        .submit {
+            width: 100%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 11px 14px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #ffffff;
+            background: var(--live);
+            border: 1px solid var(--live);
+            border-radius: var(--radius-sm);
+            margin-top: 4px;
+        }
+
+            .submit:hover:not(:disabled) { filter: brightness(1.08); }
+
+            .submit:disabled {
+                opacity: .65;
+                cursor: progress;
+            }
+
+        .spinner {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.4);
+            border-top-color: #ffffff;
+            animation: spin .8s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .footnote {
+            margin: 16px 0 0;
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.45;
+        }
+
+        [hidden] { display: none !important; }
+
+        .checking {
+            text-align: center;
+            font-size: 13.5px;
+            color: var(--text-secondary);
+            padding: 24px 0;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .spinner { animation: none; }
+        }
+    </style>
+</head>
+<body>
+    <main class="card">
+        <div class="card-top">
+            <div>
+                <p class="brand">FootLook</p>
+                <h1>Welcome to FootLook</h1>
+                <p class="lede">Sign in to start observing your API. Observation runs only while you are signed in.</p>
+            </div>
+            <button id="theme-toggle-btn" class="theme-toggle-btn" type="button" aria-label="Toggle dark mode">
+                <span id="theme-toggle-icon" aria-hidden="true">&#127769;</span>
+                <span id="theme-toggle-label">Dark</span>
+            </button>
+        </div>
+
+        <div id="checking" class="checking" role="status" hidden>Checking your session&hellip;</div>
+
+        <div id="auth-area">
+            <div class="tabs" role="tablist" aria-label="Account">
+                <button id="tab-login" class="tab" type="button" role="tab" aria-selected="true" aria-controls="panel-login">Sign in</button>
+                <button id="tab-register" class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-register" tabindex="-1">Create account</button>
+            </div>
+
+            <div id="message" class="message-region" aria-live="polite" aria-atomic="true"></div>
+
+            <form id="panel-login" role="tabpanel" aria-labelledby="tab-login" novalidate>
+                <div class="field">
+                    <label for="login-email">Email</label>
+                    <input id="login-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" required />
+                    <p id="login-email-error" class="field-error" hidden></p>
+                </div>
+                <div class="field">
+                    <label for="login-password">Password</label>
+                    <div class="pw-wrap">
+                        <input id="login-password" name="password" type="password" autocomplete="current-password" required />
+                        <button type="button" class="pw-toggle" data-target="login-password" aria-controls="login-password" aria-pressed="false">Show</button>
+                    </div>
+                    <p id="login-password-error" class="field-error" hidden></p>
+                </div>
+                <button id="login-submit" class="submit" type="submit"><span class="spinner" hidden aria-hidden="true"></span><span class="submit-label">Sign in</span></button>
+            </form>
+
+            <form id="panel-register" role="tabpanel" aria-labelledby="tab-register" novalidate hidden>
+                <div class="field">
+                    <label for="register-name">Display name <span class="optional">(optional)</span></label>
+                    <input id="register-name" name="displayName" type="text" autocomplete="name" />
+                </div>
+                <div class="field">
+                    <label for="register-email">Email</label>
+                    <input id="register-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" required />
+                    <p id="register-email-error" class="field-error" hidden></p>
+                </div>
+                <div class="field">
+                    <label for="register-password">Password</label>
+                    <div class="pw-wrap">
+                        <input id="register-password" name="password" type="password" autocomplete="new-password" required aria-describedby="register-password-hint" />
+                        <button type="button" class="pw-toggle" data-target="register-password" aria-controls="register-password" aria-pressed="false">Show</button>
+                    </div>
+                    <p id="register-password-hint" class="hint">At least 8 characters.</p>
+                    <p id="register-password-error" class="field-error" hidden></p>
+                </div>
+                <div class="field">
+                    <label for="register-confirm">Confirm password</label>
+                    <div class="pw-wrap">
+                        <input id="register-confirm" name="confirm" type="password" autocomplete="new-password" required />
+                        <button type="button" class="pw-toggle" data-target="register-confirm" aria-controls="register-confirm" aria-pressed="false">Show</button>
+                    </div>
+                    <p id="register-confirm-error" class="field-error" hidden></p>
+                </div>
+                <button id="register-submit" class="submit" type="submit"><span class="spinner" hidden aria-hidden="true"></span><span class="submit-label">Create account</span></button>
+            </form>
+
+            <p class="footnote">The first account created on this FootLook instance becomes its admin.</p>
+        </div>
+    </main>
+
+    <script>
+        (function () {
+            'use strict';
+
+            var TOKEN_KEY = 'footlook_token';
+            var TOKEN_EXPIRY_KEY = 'footlook_token_expires';
+            var USER_KEY = 'footlook_user';
+            var DASHBOARD_URL = '/footlook.html';
+            var MIN_PASSWORD_LENGTH = 8;
+            var EXPIRY_SAFETY_MARGIN_MS = 5000;
+            var EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+            var memory = {}; // fallback when localStorage is blocked
+
+            function $(id) { return document.getElementById(id); }
+
+            function storageGet(key) {
+                try { return localStorage.getItem(key) || ''; } catch (err) { return memory[key] || ''; }
+            }
+            function storageSet(key, value) {
+                try { localStorage.setItem(key, value); } catch (err) { memory[key] = value; }
+            }
+            function storageRemove(key) {
+                try { localStorage.removeItem(key); } catch (err) { /* ignore */ }
+                delete memory[key];
+            }
+            function clearSession() {
+                storageRemove(TOKEN_KEY);
+                storageRemove(TOKEN_EXPIRY_KEY);
+                storageRemove(USER_KEY);
+            }
+
+            // ---------- Theme ----------
+            function getActiveTheme() {
+                var explicit = document.documentElement.getAttribute('data-theme');
+                if (explicit === 'dark' || explicit === 'light') return explicit;
+                return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            }
+            function syncThemeToggle() {
+                var isDark = getActiveTheme() === 'dark';
+                $('theme-toggle-icon').innerHTML = isDark ? '&#9728;&#65039;' : '&#127769;';
+                $('theme-toggle-label').textContent = isDark ? 'Light' : 'Dark';
+            }
+            $('theme-toggle-btn').addEventListener('click', function () {
+                var next = getActiveTheme() === 'dark' ? 'light' : 'dark';
+                document.documentElement.setAttribute('data-theme', next);
+                try { localStorage.setItem('footlook_theme', next); } catch (err) { /* ignore */ }
+                syncThemeToggle();
+            });
+            syncThemeToggle();
+
+            // ---------- Messages ----------
+            var messageEl = $('message');
+            function showMessage(kind, text) {
+                messageEl.innerHTML = '';
+                if (!text) return;
+                var p = document.createElement('p');
+                p.className = 'message ' + kind;
+                p.textContent = text;
+                // Errors interrupt (role=alert), success is polite via the region.
+                if (kind === 'error') p.setAttribute('role', 'alert');
+                messageEl.appendChild(p);
+            }
+            function clearMessage() { showMessage('', ''); }
+
+            function setFieldError(inputId, text) {
+                var input = $(inputId);
+                var err = $(inputId + '-error');
+                if (text) {
+                    input.setAttribute('aria-invalid', 'true');
+                    input.setAttribute('aria-describedby', inputId + '-error');
+                    err.textContent = text;
+                    err.hidden = false;
+                } else {
+                    input.removeAttribute('aria-invalid');
+                    if (input.id === 'register-password') {
+                        input.setAttribute('aria-describedby', 'register-password-hint');
+                    } else {
+                        input.removeAttribute('aria-describedby');
+                    }
+                    if (err) { err.textContent = ''; err.hidden = true; }
+                }
+            }
+
+            // ---------- Tabs ----------
+            var tabLogin = $('tab-login');
+            var tabRegister = $('tab-register');
+            var panelLogin = $('panel-login');
+            var panelRegister = $('panel-register');
+
+            function selectTab(which, focusFirst) {
+                var isLogin = which === 'login';
+                tabLogin.setAttribute('aria-selected', String(isLogin));
+                tabRegister.setAttribute('aria-selected', String(!isLogin));
+                tabLogin.tabIndex = isLogin ? 0 : -1;
+                tabRegister.tabIndex = isLogin ? -1 : 0;
+                panelLogin.hidden = !isLogin;
+                panelRegister.hidden = isLogin;
+                clearMessage();
+                if (focusFirst) {
+                    (isLogin ? $('login-email') : $('register-name')).focus();
+                }
+            }
+            tabLogin.addEventListener('click', function () { selectTab('login', true); });
+            tabRegister.addEventListener('click', function () { selectTab('register', true); });
+            [tabLogin, tabRegister].forEach(function (tab) {
+                tab.addEventListener('keydown', function (e) {
+                    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                        e.preventDefault();
+                        var toRegister = tab === tabLogin;
+                        selectTab(toRegister ? 'register' : 'login', false);
+                        (toRegister ? tabRegister : tabLogin).focus();
+                    }
+                });
+            });
+
+            // ---------- Password show/hide ----------
+            Array.prototype.forEach.call(document.querySelectorAll('.pw-toggle'), function (btn) {
+                btn.addEventListener('click', function () {
+                    var input = $(btn.getAttribute('data-target'));
+                    var show = input.type === 'password';
+                    input.type = show ? 'text' : 'password';
+                    btn.textContent = show ? 'Hide' : 'Show';
+                    btn.setAttribute('aria-pressed', String(show));
+                });
+            });
+
+            // ---------- Busy state ----------
+            function setBusy(form, busy) {
+                var submit = form.querySelector('.submit');
+                submit.disabled = busy;
+                form.setAttribute('aria-busy', String(busy));
+                submit.querySelector('.spinner').hidden = !busy;
+                var label = submit.querySelector('.submit-label');
+                if (form === panelLogin) label.textContent = busy ? 'Signing in…' : 'Sign in';
+                else label.textContent = busy ? 'Creating account…' : 'Create account';
+                Array.prototype.forEach.call(form.querySelectorAll('input'), function (i) { i.readOnly = busy; });
+            }
+
+            // ---------- HTTP ----------
+            async function postJson(url, body) {
+                var response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                var data = null;
+                try { data = await response.json(); } catch (err) { /* empty / non-JSON body */ }
+                return { ok: response.ok, status: response.status, data: data };
+            }
+
+            function serverMessage(result, fallback) {
+                if (result.data && typeof result.data.message === 'string' && result.data.message) {
+                    return result.data.message;
+                }
+                return fallback;
+            }
+
+            var NETWORK_ERROR = "Couldn't reach the FootLook server. Check your connection and try again.";
+
+            // ---------- Validation (mirrors the server) ----------
+            function validateEmail(inputId) {
+                var value = $(inputId).value.trim();
+                if (!value) { setFieldError(inputId, 'Enter your email address.'); return false; }
+                if (!EMAIL_PATTERN.test(value)) { setFieldError(inputId, 'Enter a valid email address.'); return false; }
+                setFieldError(inputId, '');
+                return true;
+            }
+
+            // ---------- Sign in ----------
+            panelLogin.addEventListener('submit', async function (e) {
+                e.preventDefault();
+                clearMessage();
+
+                var okEmail = validateEmail('login-email');
+                var password = $('login-password').value;
+                var okPassword = true;
+                if (!password) { setFieldError('login-password', 'Enter your password.'); okPassword = false; }
+                else setFieldError('login-password', '');
+                if (!okEmail || !okPassword) {
+                    (okEmail ? $('login-password') : $('login-email')).focus();
+                    return;
+                }
+
+                setBusy(panelLogin, true);
+                try {
+                    var result = await postJson('/footlook/auth/login', {
+                        email: $('login-email').value.trim(),
+                        password: password
+                    });
+
+                    if (result.ok && result.data && result.data.token) {
+                        storageSet(TOKEN_KEY, result.data.token);
+                        storageSet(TOKEN_EXPIRY_KEY, result.data.expiresAtUtc || '');
+                        storageSet(USER_KEY, JSON.stringify(result.data.user || null));
+                        window.location.replace(DASHBOARD_URL);
+                        return; // stay in the busy state while navigating
+                    }
+
+                    if (result.status === 401) {
+                        showMessage('error', serverMessage(result, 'Incorrect email or password.'));
+                    } else {
+                        showMessage('error', serverMessage(result, 'Sign in failed (' + result.status + '). Please try again.'));
+                    }
+                } catch (err) {
+                    showMessage('error', NETWORK_ERROR);
+                }
+                setBusy(panelLogin, false);
+                $('login-password').focus();
+                $('login-password').select();
+            });
+
+            // ---------- Create account ----------
+            panelRegister.addEventListener('submit', async function (e) {
+                e.preventDefault();
+                clearMessage();
+
+                var okEmail = validateEmail('register-email');
+                var password = $('register-password').value;
+                var confirm = $('register-confirm').value;
+
+                var okPassword = password.length >= MIN_PASSWORD_LENGTH;
+                setFieldError('register-password', okPassword ? '' : 'Password must be at least ' + MIN_PASSWORD_LENGTH + ' characters.');
+
+                var okConfirm = okPassword && password === confirm;
+                if (!confirm) setFieldError('register-confirm', 'Confirm your password.');
+                else if (password !== confirm) setFieldError('register-confirm', 'Passwords do not match.');
+                else setFieldError('register-confirm', '');
+                if (!confirm) okConfirm = false;
+
+                if (!okEmail || !okPassword || !okConfirm) {
+                    (!okEmail ? $('register-email') : !okPassword ? $('register-password') : $('register-confirm')).focus();
+                    return;
+                }
+
+                var email = $('register-email').value.trim();
+                var body = { email: email, password: password };
+                var displayName = $('register-name').value.trim();
+                if (displayName) body.displayName = displayName;
+
+                setBusy(panelRegister, true);
+                try {
+                    var result = await postJson('/footlook/auth/register', body);
+
+                    if (result.ok) {
+                        $('register-password').value = '';
+                        $('register-confirm').value = '';
+                        $('login-password').value = '';
+                        $('login-email').value = email;
+                        setFieldError('login-email', '');
+                        setFieldError('login-password', '');
+                        setBusy(panelRegister, false);
+                        selectTab('login', false);
+                        showMessage('success', 'Account created — sign in to start observing');
+                        $('login-password').focus();
+                        return;
+                    }
+
+                    showMessage('error', serverMessage(result,
+                        result.status === 409 ? 'That email is already registered.' : 'Could not create the account (' + result.status + '). Please try again.'));
+                } catch (err) {
+                    showMessage('error', NETWORK_ERROR);
+                }
+                setBusy(panelRegister, false);
+            });
+
+            // ---------- Already signed in? ----------
+            function isStoredTokenUsable() {
+                if (!storageGet(TOKEN_KEY)) return false;
+                var expiresAt = new Date(storageGet(TOKEN_EXPIRY_KEY)).getTime();
+                return isFinite(expiresAt) && Date.now() < (expiresAt - EXPIRY_SAFETY_MARGIN_MS);
+            }
+
+            async function checkExistingSession() {
+                if (!isStoredTokenUsable()) {
+                    // Drop any stale leftovers so the dashboard doesn't see them.
+                    if (storageGet(TOKEN_KEY) || storageGet(TOKEN_EXPIRY_KEY) || storageGet(USER_KEY)) clearSession();
+                    return;
+                }
+
+                $('auth-area').hidden = true;
+                $('checking').hidden = false;
+                try {
+                    var response = await fetch('/footlook/auth/me', {
+                        method: 'GET',
+                        headers: { 'Authorization': 'Bearer ' + storageGet(TOKEN_KEY), 'Accept': 'application/json' }
+                    });
+                    if (response.ok) {
+                        window.location.replace(DASHBOARD_URL);
+                        return;
+                    }
+                    if (response.status === 401) clearSession();
+                } catch (err) {
+                    // Server unreachable - keep the stored token, just show the form.
+                }
+                $('checking').hidden = true;
+                $('auth-area').hidden = false;
+            }
+
+            checkExistingSession();
+        })();
+    </script>
+</body>
+</html>

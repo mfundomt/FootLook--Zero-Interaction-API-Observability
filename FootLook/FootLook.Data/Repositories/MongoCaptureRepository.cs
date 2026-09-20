@@ -5,6 +5,12 @@ using MongoDB.Driver;
 
 namespace FootLook.Data.Repositories;
 
+/// <summary>
+/// Reads captures from MongoDB. Not used by any FootLook endpoint and not session-aware:
+/// the queries are unfiltered and ObserverSessionIds is not persisted, so it cannot purge or
+/// scope by observation session. Anything exposing it to developers must first add session
+/// scoping and purge-on-session-end; until then it must not be wired to a route.
+/// </summary>
 public class MongoCaptureRepository : ICaptureRepository
 {
     private readonly IMongoCollection<CapturedRequest> _collection;

@@ -81,19 +81,19 @@ namespace FootLook.Core.Services
 
                         try
                         {
-                            if (!string.IsNullOrWhiteSpace(capturedRequest.CaptureScopeId))
+                            if (capturedRequest.ObserverSessionIds.Count > 0)
                             {
                                 await _hub.Clients
-                                    .Group(CaptureHub.GroupNameForScope(capturedRequest.CaptureScopeId))
+                                    .Groups(capturedRequest.ObserverSessionIds.Select(CaptureHub.GroupNameForSession).ToList())
                                     .SendAsync("captureReceived", capturedRequest, cancellationToken: stoppingToken);
                             }
                             else
                             {
-                                // No scope on the capture (shouldn't happen once ShadowMiddleware
-                                // always sets one) - drop the broadcast rather than fan it out to
-                                // every connected dashboard regardless of scope.
+                                // No observers on the capture (shouldn't happen - ShadowMiddleware
+                                // only captures while a session is active) - drop the broadcast
+                                // rather than fan it out to every connected dashboard.
                                 _logger.LogWarning(
-                                    "FootLook capture {Id} has no CaptureScopeId; skipping live broadcast to avoid a cross-scope leak.",
+                                    "FootLook capture {Id} has no observers; skipping live broadcast to avoid a cross-session leak.",
                                     capturedRequest.Id);
                             }
                         }

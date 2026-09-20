@@ -130,6 +130,39 @@
             color: var(--text-primary);
         }
 
+        .header-actions {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 8px;
+        }
+
+        .header-actions-row {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .user-identity {
+            font-size: 12.5px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            max-width: 240px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .session-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
         .header-row {
             display: flex;
             align-items: flex-start;
@@ -1303,10 +1336,20 @@
                     <span class="">Real-time observability stream.</span>
                 </div>
             </div>
-            <button id="theme-toggle-btn" class="theme-toggle-btn" type="button" aria-label="Toggle dark mode">
-                <span id="theme-toggle-icon" aria-hidden="true">🌙</span>
-                <span id="theme-toggle-label">Dark</span>
-            </button>
+            <div class="header-actions">
+                <div class="header-actions-row">
+                    <span id="user-identity" class="user-identity" hidden></span>
+                    <button id="sign-out-btn" class="theme-toggle-btn" type="button">Sign out</button>
+                    <button id="theme-toggle-btn" class="theme-toggle-btn" type="button" aria-label="Toggle dark mode">
+                        <span id="theme-toggle-icon" aria-hidden="true">🌙</span>
+                        <span id="theme-toggle-label">Dark</span>
+                    </button>
+                </div>
+                <div class="session-indicator" id="session-indicator" role="status" aria-live="polite" hidden>
+                    <span id="session-dot" class="live-dot paused" aria-hidden="true"></span>
+                    <span id="session-text">Checking observation session…</span>
+                </div>
+            </div>
         </div>
 
         <hr class="divider" />
@@ -1535,9 +1578,16 @@
             var TOKEN_QUERY_PARAM = 'footlook_token';
             var TOKEN_STORAGE_KEY = 'footlook_token';
             var TOKEN_EXPIRY_STORAGE_KEY = 'footlook_token_expires';
+            var USER_STORAGE_KEY = 'footlook_user';
+            // Where a developer signs in (Microsoft sign-in on the marketing site). The dashboard has
+            // no sign-in form of its own: with no usable session, or after sign-out, the browser
+            // goes here, and the site sends it back with #token=<jwt>&expires=<iso> in the URL
+            // fragment (consumed below).
+            var LOGIN_PAGE_URL = 'https://www.footlook.co.za/login';
             var TOKEN_EXPIRY_SAFETY_MARGIN_MS = 5000;
 
-            var authStorageFallback = { token: '', expiresAtUtc: '' };
+            var authStorageFallback = { token: '', expiresAtUtc: '', user: '' };
+            var redirectingToLogin = false;
 
             function getStoredToken() {
                 try {
@@ -1560,7 +1610,8 @@
                     localStorage.setItem(TOKEN_STORAGE_KEY, token);
                     localStorage.setItem(TOKEN_EXPIRY_STORAGE_KEY, expiresAtUtc || '');
                 } catch (err) {
-                    authStorageFallback = { token: token, expiresAtUtc: expiresAtUtc || '' };
+                    authStorageFallback.token = token;
+                    authStorageFallback.expiresAtUtc = expiresAtUtc || '';
                 }
             }
 
@@ -1568,9 +1619,46 @@
                 try {
                     localStorage.removeItem(TOKEN_STORAGE_KEY);
                     localStorage.removeItem(TOKEN_EXPIRY_STORAGE_KEY);
+                    localStorage.removeItem(USER_STORAGE_KEY);
                 } catch (err) {
-                    authStorageFallback = { token: '', expiresAtUtc: '' };
+                    // storage blocked - fall through to the in-memory copy below
                 }
+                authStorageFallback = { token: '', expiresAtUtc: '', user: '' };
+            }
+
+            function getStoredUser() {
+                var raw = '';
+                try {
+                    raw = localStorage.getItem(USER_STORAGE_KEY) || '';
+                } catch (err) {
+                    raw = authStorageFallback.user;
+                }
+                if (!raw) return null;
+                try {
+                    var parsed = JSON.parse(raw);
+                    return parsed && typeof parsed === 'object' ? parsed : null;
+                } catch (err) {
+                    return null;
+                }
+            }
+
+            function setStoredUser(user) {
+                var raw = JSON.stringify(user || null);
+                try {
+                    localStorage.setItem(USER_STORAGE_KEY, raw);
+                } catch (err) {
+                    authStorageFallback.user = raw;
+                }
+            }
+
+            // Clears the stored session and sends the browser to the login page. The flag
+            // makes every other in-flight call (toasts, retries) go quiet instead of
+            // spamming errors while the navigation is happening.
+            function redirectToLogin() {
+                clearStoredToken();
+                if (redirectingToLogin) return;
+                redirectingToLogin = true;
+                window.location.replace(LOGIN_PAGE_URL);
             }
 
             function isStoredTokenUsable() {
@@ -1581,78 +1669,78 @@
                 return Number.isFinite(expiresAt) && Date.now() < (expiresAt - TOKEN_EXPIRY_SAFETY_MARGIN_MS);
             }
 
-            // Two independent code paths call footlookFetch on first load (init's
-            // refreshAll and the pause/resume button's immediate status check), and both
-            // can need a token around the same time. Rather than each opening its own
-            // window.prompt + login request, every caller awaits this SAME in-flight
-            // promise, so only one login round-trip (and one dialog) ever happens.
-            var authInFlight = null;
+            // Session hand-off from the sign-in site: it redirects here with
+            // #token=<jwt>&expires=<iso>. Store the session under the usual keys, then strip the
+            // fragment at once (replaceState, not a redirect) so the token is not left in the
+            // address bar, the history entry or a copied link. The fragment is never sent to a
+            // server. A malformed hand-off is discarded, but is stripped all the same. Must run
+            // before anything calls ensureAuthenticated().
+            function consumeHandoffFragment() {
+                var hash = window.location.hash || '';
+                if (hash.charAt(0) === '#') hash = hash.slice(1);
+                if (!hash) return;
 
+                var params;
+                try {
+                    params = new URLSearchParams(hash);
+                } catch (err) {
+                    return;
+                }
+                if (!params.has('token')) return;
+
+                var token = (params.get('token') || '').trim();
+                var expires = (params.get('expires') || '').trim();
+
+                try {
+                    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+                } catch (err) {
+                    window.location.hash = '';
+                }
+
+                var looksLikeJwt = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/.test(token);
+                var expiresMs = new Date(expires).getTime();
+                if (!looksLikeJwt || !Number.isFinite(expiresMs) || expiresMs <= Date.now()) return;
+
+                // A different account may have been signed in here before; drop its identity too.
+                clearStoredToken();
+                setStoredToken(token, expires);
+            }
+
+            consumeHandoffFragment();
+
+            // Returns the stored bearer token if it is still usable. There is no prompt
+            // any more: without a usable token the developer must sign in on the login
+            // page (login is what starts the observation session), so we redirect there
+            // and return ''. Callers must treat '' as "stop what you are doing".
+            // forceReAuth is kept for signature compatibility and is ignored.
             async function ensureAuthenticated(forceReAuth) {
-                if (!forceReAuth && isStoredTokenUsable()) {
+                if (isStoredTokenUsable()) {
                     return getStoredToken();
                 }
 
-                if (authInFlight) {
-                    return authInFlight;
-                }
-
-                authInFlight = (async function () {
-                    try {
-                        var apiKey = window.prompt(
-                            'Sign in to FootLook\n\nEnter your API key (demo default: footlook-dev-key):',
-                            '');
-
-                        if (!apiKey) {
-                            return '';
-                        }
-
-                        var response = await fetch('/footlook/auth/token', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ apiKey: apiKey.trim() })
-                        });
-
-                        if (!response.ok) {
-                            toast('Sign-in failed: invalid API key.');
-                            clearStoredToken();
-                            return '';
-                        }
-
-                        var data = await response.json();
-                        var token = data.token || data.Token;
-                        var expiresAtUtc = data.expiresAtUtc || data.ExpiresAtUtc;
-                        setStoredToken(token, expiresAtUtc);
-                        return token;
-                    } finally {
-                        authInFlight = null;
-                    }
-                })();
-
-                return authInFlight;
+                redirectToLogin();
+                return '';
             }
 
             // Every FootLook REST call must go through this instead of the raw fetch API so
-            // a valid bearer token is always attached (logging in first if needed), and a
-            // 401 (missing/expired token) triggers a fresh sign-in instead of a silently
-            // broken dashboard. A 403 means the signed-in token isn't admin-flagged.
+            // the bearer token is always attached. A 401 (missing/expired token or ended
+            // observation session) clears the stored login and redirects to the login page
+            // - no retry. A 403 means the signed-in account isn't an admin.
             async function footlookFetch(url, options) {
                 options = options || {};
                 var headers = Object.assign({}, options.headers || {});
                 var token = await ensureAuthenticated(false);
-                if (token) {
-                    headers['Authorization'] = 'Bearer ' + token;
+                if (!token) {
+                    // Redirect already under way; hand callers a 401 instead of sending an
+                    // unauthenticated request.
+                    return new Response(null, { status: 401 });
                 }
+                headers['Authorization'] = 'Bearer ' + token;
 
                 var response = await fetch(url, Object.assign({}, options, { headers: headers }));
 
                 if (response.status === 401) {
-                    clearStoredToken();
-                    var newToken = await ensureAuthenticated(true);
-                    if (newToken) {
-                        headers['Authorization'] = 'Bearer ' + newToken;
-                        response = await fetch(url, Object.assign({}, options, { headers: headers }));
-                    }
+                    redirectToLogin();
                 } else if (response.status === 403) {
                     toast('That action needs an admin FootLook account.');
                 }
@@ -1771,7 +1859,8 @@
                     'kpi-confidence', 'kpi-confidence-tag', 'kpi-confidence-card',
                     'visible-results-count', 'chart-wrap', 'capture-tbody', 'page-info', 'prev-page-btn',
                     'next-page-btn', 'capture-details-panel', 'pause-live-btn', 'toast-container', 'search-path',
-                    'theme-toggle-btn', 'theme-toggle-icon', 'theme-toggle-label'
+                    'theme-toggle-btn', 'theme-toggle-icon', 'theme-toggle-label',
+                    'user-identity', 'sign-out-btn', 'session-indicator', 'session-dot', 'session-text'
                 ].forEach(function (id) { el[id] = document.getElementById(id); });
             }
 
@@ -1807,6 +1896,7 @@
             }
 
             function toast(msg) {
+                if (redirectingToLogin || !el['toast-container']) return;
                 var t = document.createElement('div');
                 t.className = 'toast';
                 t.textContent = msg;
@@ -2801,8 +2891,66 @@
                 }
             }
 
+            function renderIdentity(user) {
+                if (!el['user-identity']) return;
+                var name = user && (user.displayName || user.email);
+                if (!name) {
+                    el['user-identity'].hidden = true;
+                    return;
+                }
+                el['user-identity'].textContent = name;
+                el['user-identity'].title = user.email ? 'Signed in as ' + user.email : '';
+                el['user-identity'].hidden = false;
+            }
+
+            function renderSessionIndicator(active) {
+                if (!el['session-indicator']) return;
+                el['session-indicator'].hidden = false;
+                el['session-dot'].className = 'live-dot ' + (active ? 'live' : 'paused');
+                el['session-text'].textContent = active ? 'Observation session active' : 'Observation session inactive';
+            }
+
+            // Refreshes identity + session state from the server. Returns false when the
+            // server rejected the token (footlookFetch has already started the redirect).
+            async function refreshIdentity() {
+                var response = await footlookFetch('/footlook/auth/me', { method: 'GET' });
+                if (response.status === 401) return false;
+                if (!response.ok) return true;
+
+                var data = await response.json();
+                if (data && data.user) {
+                    setStoredUser(data.user);
+                    renderIdentity(data.user);
+                }
+                renderSessionIndicator(!!(data && data.observationActive));
+                return true;
+            }
+
+            async function signOut() {
+                var button = el['sign-out-btn'];
+                if (button) button.disabled = true;
+
+                var token = getStoredToken();
+                if (token) {
+                    try {
+                        await fetch('/footlook/auth/logout', {
+                            method: 'POST',
+                            headers: { 'Authorization': 'Bearer ' + token }
+                        });
+                    } catch (err) { /* ignore - we are leaving either way */ }
+                }
+
+                // Silence toasts/handlers from the connection closing underneath us.
+                redirectingToLogin = true;
+                if (connection) {
+                    try { await connection.stop(); } catch (err) { /* ignore */ }
+                }
+                clearStoredToken();
+                window.location.replace(LOGIN_PAGE_URL);
+            }
+
             async function wireLiveStream() {
-                await ensureAuthenticated(false);
+                if (!(await ensureAuthenticated(false))) return;
 
                 connection = new signalR.HubConnectionBuilder()
                     .withUrl(withTokenQuery('/footlook/live'))
@@ -2837,18 +2985,23 @@
 
             async function init() {
                 try {
-                    await ensureAuthenticated(false);
+                    // No usable token -> ensureAuthenticated has already started the
+                    // redirect to the login page; don't initialise anything further.
+                    if (!(await ensureAuthenticated(false))) return;
 
                     applySiteConnectorVisibility();
                     cacheEls();
                     wireEvents();
                     wireThemeToggle();
+                    if (el['sign-out-btn']) el['sign-out-btn'].addEventListener('click', signOut);
+                    renderIdentity(getStoredUser());
                     updateLiveIndicators();
                     if (el['site-label']) {
                         el['site-label'].textContent = state.site;
                     }
                     setConnectButtonState('default');
 
+                    if (!(await refreshIdentity())) return;
                     await refreshAll(1);
                     await wireLiveStream();
                 } catch (err) {

@@ -192,7 +192,7 @@ graph TD
 **Type**: Ring-buffered in-memory store + `IShadowCaptureStore` implementation  
 **Location**: [FootLook/FootLook.Core/Interfaces/InMemorySink.cs](FootLook/FootLook.Core/Interfaces/InMemorySink.cs)  
 **Responsibility**: Hold the most recent N captures (default `MaxInMemoryCaptures = 1000`) in a `ConcurrentQueue` for fast read by the `/footlook/captures*` endpoints and the dashboard.  
-**Notes**: Eviction is FIFO — when count exceeds the limit, the oldest entry is dequeued. Also exposes `Clear()` and `GetById(Guid)`.
+**Notes**: Eviction is FIFO — when count exceeds the limit, the oldest entry is dequeued. Also exposes `Clear(sessionId)` and `GetById(Guid)`. Each capture is tagged with the ids of the observation sessions (one per login, the `footlook_sid` token claim) that were live when it was recorded; every read endpoint and the live hub are scoped to the caller's session. When a session ends — logout, token expiry or the periodic sweep — its captures are deleted here (captures another live session also observed stay until that session ends too), so a new session, even of the same account, always starts empty. This applies to the in-memory store only; `captures.jsonl` carries no session tags and is not purged on logout.
 
 #### `FileSink`
 **Type**: Append-only JSONL writer with rotation and retention  
@@ -576,7 +576,7 @@ External tooling, scripts, or other services can poll FootLook's read endpoints 
 | By ID missing | `GET /footlook/captures/{id}` with random GUID | 404 |
 | Stats | `GET /footlook/captures/stats` | Returns `CaptureStats` (computed by Mongo repository if registered) |
 | History | `GET /footlook/captures/history?count=20` | Reads `captures.jsonl`, returns last 20 |
-| Clear | `DELETE /footlook/captures` | Drains in-memory store; **does not** touch file or Mongo |
+| Clear | `DELETE /footlook/captures` | Removes the caller's session from the in-memory captures (deleting ones no other session observes); **does not** touch file or Mongo |
 | Health | `GET /footlook/health` | Returns sink type + feature flags |
 
 ---
