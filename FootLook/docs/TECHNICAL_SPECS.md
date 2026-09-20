@@ -21,7 +21,7 @@ The system is designed for developers and operators investigating API behavior. 
 - Preserves request and response bodies when content types and options allow it, with configurable truncation.
 - Masks sensitive headers, query parameters, and body fields; optionally hashes client IP and user agent.
 - Adds or propagates correlation and W3C trace headers on captured responses.
-- Buffers captures in a bounded asynchronous queue and persists them to memory and `captures.jsonl`.
+- Buffers captures in a bounded asynchronous queue and holds them in memory, scoped to the observation session that recorded them and deleted when it ends. Writing to `captures.jsonl` is opt-in (`EnableFileSink`, off by default) because the file cannot be purged per session.
 - De-duplicates recent captures, retries sink writes, records reliability telemetry, and broadcasts persisted captures over SignalR.
 - Provides capture search, paging, statistics, history, identity correlation, runtime control, privacy audit, diagnostics, setup profiles, and product outcome metrics.
 

@@ -116,6 +116,16 @@ namespace FootLook.Core.Options
         /// </summary>
         public long MaxInMemoryCaptureBytes { get; set; } = 200 * 1024 * 1024; // 200MB
 
+        /// <summary>
+        /// Also append every capture to captures.jsonl next to the host's binaries. Off by
+        /// default: captures live in memory only, and are deleted when the observation session
+        /// that recorded them ends. The file cannot honour that - it is one shared append-only
+        /// log with no session tags, it holds request and response bodies, and signing out does
+        /// not remove anything from it - so turn this on only if you want a durable log and
+        /// accept that it outlives sessions. MaxFileSizeBytes and RetentionDays apply to it.
+        /// </summary>
+        public bool EnableFileSink { get; set; } = false;
+
         public long MaxFileSizeBytes { get; set; } = 100 * 1024 * 1024; // 100MB
 
         public int RetentionDays { get; set; } = 30;

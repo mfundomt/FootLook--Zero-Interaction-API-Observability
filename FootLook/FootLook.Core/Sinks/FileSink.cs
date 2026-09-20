@@ -6,7 +6,8 @@ using FootLook.Core.Options;
 namespace FootLook.Core.Sinks
 {
     /// <summary>
-    /// Appends every capture to captures.jsonl next to the host's binaries.
+    /// Appends every capture to captures.jsonl next to the host's binaries. Opt-in: only used
+    /// when <see cref="FootLookOptions.EnableFileSink"/> is set, because of the limit below.
     /// Session scoping does NOT apply here: <see cref="CapturedRequest.ObserverSessionIds"/> is
     /// not serialized, so the file carries no session tags, and it is one shared append-only
     /// log (rotated by size, expired by RetentionDays) that can't be filtered per session.

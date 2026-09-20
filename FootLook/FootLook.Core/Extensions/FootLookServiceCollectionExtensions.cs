@@ -52,18 +52,23 @@ namespace FootLook.Core.Extensions
 
 
             //add a composite sink that combines multiple IShadowSink implementations, allowing the captured requests to be processed by all registered sinks. This way,
-            //when a request is captured, it can be written to a file and stored in memory simultaneously, providing flexibility in how the captured data is handled and stored.
+            //when a request is captured, it is stored in memory and, only when FootLookOptions.EnableFileSink is set, also appended to a file.
             services.AddSingleton<IShadowSink>(provide =>
             {
-                var sinks = new IShadowSink[]
+                var footLookOptions = provide.GetRequiredService<FootLookOptions>();
+                var sinks = new List<IShadowSink>();
+
+                // The file cannot be purged when a session ends, so it is opt-in.
+                if (footLookOptions.EnableFileSink)
                 {
-                   provide.GetRequiredService<FileSink>(),
-                   provide.GetRequiredService<InMemorySink>()
-                };
+                    sinks.Add(provide.GetRequiredService<FileSink>());
+                }
+
+                sinks.Add(provide.GetRequiredService<InMemorySink>());
 
                 return new CompositeSink(
                     sinks,
-                    provide.GetRequiredService<FootLookOptions>(),
+                    footLookOptions,
                     provide.GetRequiredService<CaptureReliabilityState>(),
                     provide.GetRequiredService<Microsoft.Extensions.Logging.ILogger<CompositeSink>>());
             });
