@@ -328,6 +328,8 @@ All routes below are under `/footlook` in the demo. No bearer token, role, or au
 | Method | Route | Purpose |
 |---|---|---|
 | GET | `/health` | Basic service, sink, and capture configuration health. |
+| GET | `/auth/config` | Anonymous. `{ mode: "central" \| "local", projectId, loginUrl }` (the last two only in central mode); the dashboard uses it to decide where to send a browser that has no session. |
+| POST | `/auth/exchange` | Anonymous, central mode only. `{ pass }` from FootLook's central sign-in becomes this host's own session token (same response shape as `/auth/microsoft`). 400 `invalid_request`, 401 `invalid_pass`, 503 `central_unavailable`, 404 `disabled` when central mode is off. A pass works once. In central mode `/auth/register`, `/auth/login` and `/auth/microsoft` answer 404 `disabled_in_central_mode`. |
 | GET | `/dashboard/ops` | Operational health, reliability, and recent privacy summary. |
 | GET | `/dev/diagnostics` | Run configuration diagnostics. |
 | POST | `/dev/self-heal` | Apply configuration normalization and return diagnostics. |
@@ -437,6 +439,8 @@ flowchart LR
 | `PrivacyHashSalt` | Optional salt for client metadata hashing | Options/user secrets/environment configuration |
 | `MongoConnectionString`, `MongoDatabaseName`, `MongoCollectionName` | Mongo repository connection and collection | Options/user secrets/environment configuration |
 | `MaxInMemoryCaptures`, `MaxFileSizeBytes`, `RetentionDays` | Retention and rotation | Options/configuration |
+| `FootLook:Central:ProjectId` | Turns on central sign-in. The project's id from the FootLook website: a public label, **not a secret**; no secret from FootLook is needed. Empty = local accounts as before | `appsettings.json` or `o.Central.ProjectId` |
+| `FootLook:Central:Issuer`, `JwksUrl`, `LoginUrl`, `ClockSkewSeconds` | Optional overrides of the central service address (default `https://footlook-auth.azurewebsites.net`), where its public key set is downloaded (default `{Issuer}/.well-known/jwks.json`), the sign-in page (default `https://www.footlook.co.za/connect`) and pass clock tolerance (default 60 s, max 60) | `appsettings.json` |
 
 Never place connection strings or privacy salts in this document or committed settings.
 

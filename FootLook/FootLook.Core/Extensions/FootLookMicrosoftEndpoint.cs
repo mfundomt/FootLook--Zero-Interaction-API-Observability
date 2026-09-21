@@ -116,7 +116,7 @@ namespace FootLook.Core.Extensions
                     isAdmin = user.IsAdmin,
                     user = new { id = user.Id, email = user.Email, displayName = user.DisplayName }
                 });
-            });
+            }).DisabledInCentralMode();
 
             return endpoints;
         }

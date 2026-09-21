@@ -192,6 +192,100 @@ namespace FootLook.Core.Options
         /// AddFootLookSqlAccounts); without one the endpoint answers 503 accounts_unavailable.
         /// </summary>
         public FootLookMicrosoftOptions Microsoft { get; set; } = new();
+
+        /// <summary>
+        /// Central sign-in through FootLook's own service. Setting <see cref="FootLookCentralOptions.ProjectId"/>
+        /// turns it on; see <see cref="FootLookCentralOptions"/>. Bound from FootLook:Central.
+        /// </summary>
+        public FootLookCentralOptions Central { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Central sign-in: the developer signs in on FootLook's website, which hands the browser a
+    /// short-lived, signed "pass" for this project; the host checks the pass and only then starts
+    /// its normal local observation session (POST {EndpointBasePath}/auth/exchange). Captures never
+    /// leave this host.
+    /// <para>
+    /// Turning it on takes one value, <see cref="ProjectId"/>, and NO secret: the host downloads
+    /// the service's PUBLIC key by itself (see <see cref="JwksUrl"/>) and uses it only to verify
+    /// passes. In central mode this host's own account routes (/auth/register, /auth/login,
+    /// /auth/microsoft) answer 404 disabled_in_central_mode. Bound from FootLook:Central.
+    /// </para>
+    /// </summary>
+    public class FootLookCentralOptions
+    {
+        /// <summary>The default address of FootLook's central service.</summary>
+        public const string DefaultIssuer = "https://footlook-auth.azurewebsites.net";
+
+        /// <summary>The default page a browser is sent to in order to sign in and get a pass.</summary>
+        public const string DefaultLoginUrl = "https://www.footlook.co.za/connect";
+
+        private string _projectId = string.Empty;
+        private string _issuer = DefaultIssuer;
+        private string _jwksUrl = string.Empty;
+        private string _loginUrl = DefaultLoginUrl;
+
+        /// <summary>
+        /// The id FootLook gave your project (for example "prj_abcd1234efgh5678"), shown on the
+        /// project's page on the FootLook website. It is a public label, NOT a secret: it is safe to
+        /// commit and it is visible to every browser that opens your dashboard. Passes are only
+        /// accepted when they were issued for exactly this id. Empty (the default) means central
+        /// sign-in is off and the local account routes work as usual.
+        /// </summary>
+        public string ProjectId
+        {
+            get => _projectId;
+            set => _projectId = value?.Trim() ?? string.Empty;
+        }
+
+        /// <summary>True when <see cref="ProjectId"/> is set, i.e. central sign-in is on.</summary>
+        public bool IsEnabled => _projectId.Length > 0;
+
+        /// <summary>
+        /// The service whose passes this host trusts: a pass's iss claim must equal this exactly.
+        /// Defaults to <see cref="DefaultIssuer"/>.
+        /// </summary>
+        public string Issuer
+        {
+            get => _issuer;
+            set => _issuer = value?.Trim() ?? string.Empty;
+        }
+
+        /// <summary>
+        /// Where the service's public signing key set (JWKS) is downloaded from. Empty (the default)
+        /// means "{Issuer}/.well-known/jwks.json". Must be https, except http on localhost for
+        /// local development. The keys are public; no credential is sent.
+        /// </summary>
+        public string JwksUrl
+        {
+            get => _jwksUrl.Length > 0 ? _jwksUrl : DefaultJwksUrl;
+            // The configuration binder writes back the value it read, which for an unset JwksUrl is the
+            // derived default. Storing that would freeze it to the issuer of the moment, so a value equal
+            // to the default is kept as "derived" and keeps following the issuer.
+            set
+            {
+                var trimmed = value?.Trim() ?? string.Empty;
+                _jwksUrl = string.Equals(trimmed, DefaultJwksUrl, StringComparison.Ordinal) ? string.Empty : trimmed;
+            }
+        }
+
+        private string DefaultJwksUrl => Issuer.TrimEnd('/') + "/.well-known/jwks.json";
+
+        /// <summary>
+        /// The sign-in page the dashboard sends a browser to when it has no session. The dashboard
+        /// adds ?project=&lt;ProjectId&gt;&amp;return=&lt;this dashboard's address&gt;.
+        /// </summary>
+        public string LoginUrl
+        {
+            get => _loginUrl;
+            set => _loginUrl = string.IsNullOrWhiteSpace(value) ? DefaultLoginUrl : value.Trim();
+        }
+
+        /// <summary>
+        /// Tolerated clock difference (seconds) when checking a pass's exp/nbf/iat. Limited to
+        /// 0-60; a larger value is treated as 60.
+        /// </summary>
+        public int ClockSkewSeconds { get; set; } = 60;
     }
 
     /// <summary>Settings for validating Microsoft (Entra ID) ID tokens. Bound from FootLook:Microsoft.</summary>

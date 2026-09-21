@@ -265,7 +265,9 @@ public class FootLookSwaggerSecurityFilter : Swashbuckle.AspNetCore.SwaggerGen.I
         "footlook/health",
         "footlook/auth/register",
         "footlook/auth/login",
-        "footlook/auth/microsoft"
+        "footlook/auth/microsoft",
+        "footlook/auth/config",
+        "footlook/auth/exchange"
     };
 
     public void Apply(Microsoft.OpenApi.Models.OpenApiOperation operation, Swashbuckle.AspNetCore.SwaggerGen.OperationFilterContext context)

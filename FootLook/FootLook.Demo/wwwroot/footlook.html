@@ -1584,10 +1584,19 @@
             // goes here, and the site sends it back with #token=<jwt>&expires=<iso> in the URL
             // fragment (consumed below).
             var LOGIN_PAGE_URL = 'https://www.footlook.co.za/login';
+            // Central sign-in (FootLook:Central:ProjectId set on this API): the host's own /auth/config says
+            // so, and the developer is sent to the central connect page instead, which hands back a signed
+            // one-time pass in #pass=<jwt>. The pass is exchanged at /auth/exchange for this host's usual
+            // session token, which is stored under the same keys as before. Without central sign-in the
+            // LOGIN_PAGE_URL above and the #token= hand-off are used exactly as they always were.
+            var AUTH_BASE = '/footlook';
             var TOKEN_EXPIRY_SAFETY_MARGIN_MS = 5000;
 
             var authStorageFallback = { token: '', expiresAtUtc: '', user: '' };
             var redirectingToLogin = false;
+            // Set when a #pass= hand-off was refused by this host. The dashboard then says so instead of
+            // bouncing to the sign-in page again, which would only loop (sign in, get refused, sign in...).
+            var passExchangeFailure = '';
 
             function getStoredToken() {
                 try {
@@ -1657,8 +1666,67 @@
             function redirectToLogin() {
                 clearStoredToken();
                 if (redirectingToLogin) return;
+                if (passExchangeFailure) {
+                    showSignInProblem(passExchangeFailure);
+                    return;
+                }
                 redirectingToLogin = true;
-                window.location.replace(LOGIN_PAGE_URL);
+                navigateToLogin();
+            }
+
+            // Where to send a browser that has no session. In central mode (asked of this host's own
+            // /auth/config) that is ${loginUrl}?project=${projectId}&return=<this page's address without
+            // query or fragment>; otherwise (local mode, or the host cannot be asked) LOGIN_PAGE_URL.
+            async function resolveLoginUrl() {
+                try {
+                    var response = await fetch(AUTH_BASE + '/auth/config', { headers: { 'Accept': 'application/json' }, cache: 'no-store' });
+                    if (!response.ok) return LOGIN_PAGE_URL;
+
+                    var config = await response.json();
+                    if (!config || config.mode !== 'central' ||
+                        typeof config.projectId !== 'string' || !config.projectId ||
+                        typeof config.loginUrl !== 'string' || !config.loginUrl) {
+                        return LOGIN_PAGE_URL;
+                    }
+
+                    var login = new URL(config.loginUrl);
+                    if (login.protocol !== 'https:' && login.protocol !== 'http:') return LOGIN_PAGE_URL;
+
+                    var separator = config.loginUrl.indexOf('?') === -1 ? '?' : '&';
+                    return config.loginUrl + separator + 'project=' + encodeURIComponent(config.projectId) +
+                        '&return=' + encodeURIComponent(window.location.origin + window.location.pathname);
+                } catch (err) {
+                    return LOGIN_PAGE_URL;
+                }
+            }
+
+            async function navigateToLogin() {
+                window.location.replace(await resolveLoginUrl());
+            }
+
+            // Shown instead of redirecting when the host refused the pass it was given (wrong project, a
+            // pass used twice, expired, or the central service could not be reached to check it).
+            function showSignInProblem(message) {
+                if (document.getElementById('footlook-signin-problem')) return;
+                var box = document.createElement('div');
+                box.id = 'footlook-signin-problem';
+                box.setAttribute('role', 'alert');
+                box.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center;background:#0b1020;color:#e8ecf5;font:16px/1.5 system-ui,sans-serif';
+                var text = document.createElement('p');
+                text.textContent = message;
+                text.style.cssText = 'max-width:32rem;margin:0';
+                var again = document.createElement('button');
+                again.type = 'button';
+                again.textContent = 'Sign in again';
+                again.style.cssText = 'padding:10px 18px;font:inherit;cursor:pointer';
+                again.addEventListener('click', function () {
+                    passExchangeFailure = '';
+                    redirectingToLogin = true;
+                    navigateToLogin();
+                });
+                box.appendChild(text);
+                box.appendChild(again);
+                document.body.appendChild(box);
             }
 
             function isStoredTokenUsable() {
@@ -1686,6 +1754,8 @@
                 } catch (err) {
                     return;
                 }
+                // Central sign-in: #pass=<jwt> is exchanged with this host for its own session.
+                if (params.has('pass')) return consumePassFragment(params);
                 if (!params.has('token')) return;
 
                 var token = (params.get('token') || '').trim();
@@ -1706,7 +1776,68 @@
                 setStoredToken(token, expires);
             }
 
-            consumeHandoffFragment();
+            // Central sign-in hand-off: the central site redirects here with #pass=<jwt>, a short-lived,
+            // single-use pass for this project. The fragment is stripped at once (same reasons as above),
+            // then the pass is posted to {base}/auth/exchange, and the session token that comes back is
+            // stored under the usual keys. Returns a promise that settles when the exchange is done;
+            // ensureAuthenticated() waits for it, so nothing runs against a half-finished sign-in. A
+            // pass this page cannot use never touches an existing session, and never throws.
+            function consumePassFragment(params) {
+                var pass = (params.get('pass') || '').trim();
+
+                try {
+                    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+                } catch (err) {
+                    window.location.hash = '';
+                }
+
+                var looksLikeJwt = pass.length <= 8192 && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/.test(pass);
+                if (!looksLikeJwt) {
+                    passExchangeFailure = 'The sign-in link was not valid. Please sign in again.';
+                    return Promise.resolve();
+                }
+
+                return exchangePass(pass);
+            }
+
+            async function exchangePass(pass) {
+                try {
+                    var response = await fetch(AUTH_BASE + '/auth/exchange', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        body: JSON.stringify({ pass: pass })
+                    });
+
+                    if (!response.ok) {
+                        passExchangeFailure = response.status === 503
+                            ? 'This API could not reach the FootLook sign-in service to check your sign-in. Try again in a moment.'
+                            : response.status === 404
+                                ? 'This API is not set up for FootLook central sign-in.'
+                                : 'This API did not accept your sign-in (it may be for a different project, or the link was already used or has expired). Please sign in again.';
+                        return;
+                    }
+
+                    var data = await response.json();
+                    var token = data && typeof data.token === 'string' ? data.token.trim() : '';
+                    var expires = data && typeof data.expiresAtUtc === 'string' ? data.expiresAtUtc.trim() : '';
+                    var looksLikeJwt = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/.test(token);
+                    var expiresMs = new Date(expires).getTime();
+                    if (!looksLikeJwt || !Number.isFinite(expiresMs) || expiresMs <= Date.now()) {
+                        passExchangeFailure = 'This API returned a sign-in this page could not use. Please sign in again.';
+                        return;
+                    }
+
+                    // A different account may have been signed in here before; drop its identity too.
+                    clearStoredToken();
+                    setStoredToken(token, expires);
+                    if (data.user && typeof data.user === 'object') setStoredUser(data.user);
+                    passExchangeFailure = '';
+                } catch (err) {
+                    passExchangeFailure = 'Could not reach this API to finish signing in. Please try again.';
+                }
+            }
+
+            var handoffDone = Promise.resolve(consumeHandoffFragment());
 
             // Returns the stored bearer token if it is still usable. There is no prompt
             // any more: without a usable token the developer must sign in on the login
@@ -1714,6 +1845,9 @@
             // and return ''. Callers must treat '' as "stop what you are doing".
             // forceReAuth is kept for signature compatibility and is ignored.
             async function ensureAuthenticated(forceReAuth) {
+                // A #pass= hand-off may still be in flight; wait for it before judging the session.
+                await handoffDone;
+
                 if (isStoredTokenUsable()) {
                     return getStoredToken();
                 }
@@ -2946,7 +3080,7 @@
                     try { await connection.stop(); } catch (err) { /* ignore */ }
                 }
                 clearStoredToken();
-                window.location.replace(LOGIN_PAGE_URL);
+                await navigateToLogin();
             }
 
             async function wireLiveStream() {

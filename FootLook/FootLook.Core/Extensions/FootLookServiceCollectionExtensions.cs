@@ -88,6 +88,24 @@ namespace FootLook.Core.Extensions
                 provider.GetRequiredService<FootLookOptions>().Microsoft,
                 provider.GetService<Microsoft.Extensions.Logging.ILogger<MicrosoftIdTokenValidator>>()));
 
+            // Central sign-in (POST {EndpointBasePath}/auth/exchange). The key provider downloads the central
+            // service's PUBLIC key set itself - nothing secret is configured. TryAdd throughout so a host (or a
+            // test) can supply its own key provider or pass validator.
+            services.TryAddSingleton<ICentralKeyProvider>(provider => new CentralJwksKeyProvider(
+                provider.GetRequiredService<FootLookOptions>().Central,
+                // No redirects, and connections recycled so a DNS change of the service is picked up.
+                new HttpClient(new SocketsHttpHandler
+                {
+                    AllowAutoRedirect = false,
+                    PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+                }, disposeHandler: true),
+                provider.GetService<Microsoft.Extensions.Logging.ILogger<CentralJwksKeyProvider>>()));
+            services.TryAddSingleton<IPassValidator>(provider => new CentralPassValidator(
+                provider.GetRequiredService<FootLookOptions>().Central,
+                provider.GetRequiredService<ICentralKeyProvider>(),
+                provider.GetService<Microsoft.Extensions.Logging.ILogger<CentralPassValidator>>()));
+            services.TryAddSingleton(_ => new PassReplayCache());
+
             // A named scheme (not the default) so registering FootLook auth never changes
             // an app's own default authentication behavior if it already has one.
             services.AddAuthentication()

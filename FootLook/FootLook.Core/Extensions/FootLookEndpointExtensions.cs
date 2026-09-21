@@ -1,4 +1,5 @@
 using System.Net.Mail;
+using System.Security.Claims;
 using FootLook.Core.Interfaces;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -39,6 +40,20 @@ namespace FootLook.Core.Extensions
 
         private static bool IsObservedBy(CapturedRequest capture, string sessionId) =>
             sessionId.Length > 0 && capture.ObserverSessionIds.Contains(sessionId, StringComparer.Ordinal);
+
+        /// <summary>
+        /// The account of a central sign-in, rebuilt from the claims FootLookTokenService put in this
+        /// host's own (signature-checked) token. Nothing else identifies such an account: it is never
+        /// stored. The account "was created" when its session started.
+        /// </summary>
+        private static FootLookUser UserFromCentralToken(ClaimsPrincipal principal, string userId, ObservationSession session) =>
+            new(
+                Id: userId,
+                Email: (principal.FindFirst("email") ?? principal.FindFirst(ClaimTypes.Email))?.Value ?? string.Empty,
+                DisplayName: (principal.FindFirst("name") ?? principal.FindFirst(ClaimTypes.Name))?.Value ?? string.Empty,
+                PasswordHash: string.Empty,
+                IsAdmin: string.Equals(principal.FindFirst(FootLookAuthDefaults.AdminClaimType)?.Value, "true", StringComparison.Ordinal),
+                CreatedAtUtc: session.StartedAtUtc);
 
         private static string? ValidateEmail(string? email)
         {
@@ -114,7 +129,7 @@ namespace FootLook.Core.Extensions
                 }
 
                 return Results.Created($"{prefix}/auth/me", FootLookUserSummary.From(user));
-            });
+            }).DisabledInCentralMode();
 
             // Generates the bearer token and, in the same step, opens a new observation
             // session for this login (with its own, initially empty, capture set) - capture
@@ -139,10 +154,14 @@ namespace FootLook.Core.Extensions
 
                 var (token, expiresAtUtc, _) = tokenService.IssueToken(user);
                 return Results.Ok(new { token, expiresAtUtc, user = FootLookUserSummary.From(user) });
-            });
+            }).DisabledInCentralMode();
 
             // Sign in with Microsoft (Entra ID): the third unauthenticated route, see FootLookMicrosoftEndpoint.
             endpoints.MapFootLookMicrosoftSignIn(prefix);
+
+            // Central sign-in (GET /auth/config, POST /auth/exchange), see FootLookCentralEndpoint. In central
+            // mode it is the way in, and the three local account routes above answer 404 instead.
+            endpoints.MapFootLookCentralSignIn(prefix);
 
             // Everything else requires a valid bearer token (obtained above) whose
             // observation session is still open. Reads/writes that only touch the caller's
@@ -158,12 +177,17 @@ namespace FootLook.Core.Extensions
             group.MapGet("/auth/me", async (HttpContext httpContext, IFootLookUserStore users, ObservationSessionStore sessions) =>
             {
                 var userId = GetUserId(httpContext);
-                // Accounts that signed in with Microsoft live in their own store (see IFootLookMicrosoftAccountStore).
-                var user = users.FindById(userId)
-                    ?? (userId.Length > 0 && httpContext.RequestServices.GetService<IFootLookMicrosoftAccountStore>() is { } microsoftAccounts
-                        ? await microsoftAccounts.FindByIdAsync(userId, httpContext.RequestAborted)
-                        : null);
                 var session = sessions.Get(httpContext.User.GetSessionId());
+                // Central sign-in: the identity was proven by a pass and lives only in this host's own
+                // token (no store holds it), so it is read back from the token's claims. Only in central
+                // mode and only for the "central:" id the exchange route issues; local mode is untouched.
+                var user = options.Central.IsEnabled && session is not null && userId.StartsWith(FootLookCentralEndpoint.UserIdPrefix, StringComparison.Ordinal)
+                    ? UserFromCentralToken(httpContext.User, userId, session)
+                    // Accounts that signed in with Microsoft live in their own store (see IFootLookMicrosoftAccountStore).
+                    : users.FindById(userId)
+                        ?? (userId.Length > 0 && httpContext.RequestServices.GetService<IFootLookMicrosoftAccountStore>() is { } microsoftAccounts
+                            ? await microsoftAccounts.FindByIdAsync(userId, httpContext.RequestAborted)
+                            : null);
                 if (user is null || session is null)
                 {
                     return Results.Json(new { message = "Authentication required" }, statusCode: StatusCodes.Status401Unauthorized);

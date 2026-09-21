@@ -192,6 +192,37 @@ builder.Services.AddFootLook(options =>
 }
 ```
 
+## Central sign-in
+
+By default a FootLook host keeps its own developer accounts. Instead, you can let people sign in on FootLook's website: register your API as a project there, copy its **ProjectId**, and add it to your host:
+
+```csharp
+builder.Services.AddFootLook(options =>
+{
+	builder.Configuration.GetSection("FootLook").Bind(options);
+	options.Central.ProjectId = "prj_yourprojectid";   // or set it in configuration, below
+});
+```
+
+```json
+{
+  "FootLook": {
+    "Central": { "ProjectId": "prj_yourprojectid" }
+  }
+}
+```
+
+That is all the setup there is:
+
+- **No secret is involved.** The ProjectId is a public label (it is visible in the browser when your dashboard redirects to sign-in). Nothing from FootLook has to be stored in your app.
+- **The host fetches the public key by itself.** It downloads FootLook's public signing key (`{Issuer}/.well-known/jwks.json`), caches it for about an hour, refreshes it when it meets an unknown key id (at most every 30 seconds) and keeps using the last good copy if the service is briefly unreachable. Before the first successful download `POST /footlook/auth/exchange` answers `503 central_unavailable`.
+- **Your captures never leave your API.** After signing in, the browser is sent back to your dashboard with a short-lived, single-use pass. Your host checks its signature, issuer (must be FootLook's), audience (must be exactly your ProjectId) and expiry, then starts its normal local observation session. Captures stay in your host's memory for that session and are deleted when it ends.
+- Only the project's owner and the members they invited can get a pass. The owner is the FootLook admin of the session; members are ordinary users.
+- **Local accounts are switched off** while a ProjectId is set: `POST /footlook/auth/register`, `/auth/login` and `/auth/microsoft` answer `404 { "error": "disabled_in_central_mode" }`. Remove the ProjectId to get them back.
+- `GET /footlook/auth/config` tells the dashboard which mode the host is in. Optional overrides (`Issuer`, `JwksUrl`, `LoginUrl`, `ClockSkewSeconds`) exist under `FootLook:Central` for a self-hosted or local central service; they default to FootLook's own.
+
+> **Note:** the dashboard page is not packaged with the NuGet library yet. Until it is, copy `wwwroot/footlook.html` from the FootLook.Demo project into your host's `wwwroot`. The copy in this repository already knows how to accept a pass and how to redirect a signed-out browser to the sign-in page.
+
 ## Endpoints (internal)
 
 `MapFootLookEndpoints(...)` registers a small set of endpoints under `EndpointBasePath` (default `/footlook`) that **power the live dashboard**. You typically don't call these directly — they exist so the dashboard and live view have data to render (health, captures list, stats, recent/history, clear, and pause/resume). The primary way to consume FootLook is the **live stream** and **in-process events** shown above.
