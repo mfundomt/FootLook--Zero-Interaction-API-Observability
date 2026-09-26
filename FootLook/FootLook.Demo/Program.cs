@@ -30,8 +30,7 @@ builder.Services.AddSwaggerGen(swagger =>
     swagger.OperationFilter<FootLookSwaggerSecurityFilter>();
 });
 builder.Services.AddHttpContextAccessor();
-//Register SignalR for real-time updates
-builder.Services.AddSignalR();
+// SignalR for the live feed is registered by AddFootLook below.
 
 // Demo-only CORS so a separately-hosted frontend (different port/origin) can be
 // driven through "Connect to site": it needs to send the X-Footlook-Session-Id /
@@ -73,14 +72,12 @@ builder.Services.AddFootLook(options =>
     options.ServiceName = "FootLook.Demo";
     options.EnvironmentName = builder.Environment.EnvironmentName;
 
-    // Ignore this app's own endpoints (dashboard/swagger/self) from being captured.
+    // Ignore this app's own endpoints (swagger/self) from being captured. FootLook's
+    // own API and dashboard pages are never captured, so they need no entry here.
     // Bot/crawler/scanner noise (robots.txt, sitemap.xml, wp-*, etc.) lives in
     // appsettings.json's FootLook:IgnoredPathPrefixes instead, below - that's the
     // list meant to grow per-environment without a redeploy.
     options.IgnoredPaths.Add("/footlook");
-    options.IgnoredPaths.Add("/footlook.html");
-    options.IgnoredPaths.Add("/footlook-login.html");
-    options.IgnoredPaths.Add("/footlook-connect.js");
     options.IgnoredPaths.Add("/");
     options.IgnoredPaths.Add("/footlook/pause");
     options.IgnoredPaths.Add("/footlook/resume");
@@ -129,7 +126,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseStaticFiles();
+// No UseStaticFiles: the dashboard (/footlook.html) is served by MapFootLookEndpoints from FootLook.Core.
 app.UseCors("FootLookDemoFrontend");
 
 #region FootLook Middleware Flow (Manual for testing)

@@ -9,6 +9,7 @@ using FootLook.Core.Models;
 using FootLook.Core.Services;
 using FootLook.Core.Security;
 using FootLook.Core.Hubs;
+using FootLook.Core.Dashboard;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace FootLook.Core.Extensions
@@ -771,6 +772,13 @@ namespace FootLook.Core.Extensions
             // with a hardcoded path that happened to match EndpointBasePath by coincidence.
             endpoints.MapHub<CaptureHub>($"{prefix}/live")
                 .RequireAuthorization(FootLookAuthDefaults.UserPolicy);
+
+            // The live dashboard ships inside this assembly, so the host needs no wwwroot copy or
+            // UseStaticFiles to get it.
+            if (options.EnableDashboard)
+            {
+                FootLookDashboard.Map(endpoints, options);
+            }
 
             return endpoints;
         }

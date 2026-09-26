@@ -30,6 +30,10 @@ namespace FootLook.Core.Extensions
             services.AddSingleton(options);
             services.AddSingleton<CaptureRuntimeState>();
 
+            // The live hub (mapped by MapFootLookEndpoints) needs SignalR. Safe if the host also calls
+            // AddSignalR itself: its registrations are TryAdd.
+            services.AddSignalR();
+
             // Register the ShadowQueue as a singleton service, meaning there will be only one instance of it throughout the application's lifetime.
             services.AddSingleton<IShadowQueue, ShadowQueue>();
 

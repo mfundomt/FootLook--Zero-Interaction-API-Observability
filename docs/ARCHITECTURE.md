@@ -244,7 +244,7 @@ graph TD
 - [FootLookEndpointExtensions](FootLook/FootLook.Core/Extensions/FootLookEndpointExtensions.cs) — `endpoints.MapFootLookEndpoints(options)` registers the read API under `EndpointBasePath`.
 
 ### Host & Auxiliary Projects
-- [FootLook.Demo](FootLook/FootLook.Demo/Program.cs) — ASP.NET Core Minimal API host that demonstrates a full FootLook integration: Swagger, SignalR, MongoDB-backed read repository, dashboard served from `wwwroot/footlook.html`, plus test endpoints `/`, `/test2`, `/slow`, `/error`, `/mongo-test`.
+- [FootLook.Demo](FootLook/FootLook.Demo/Program.cs) — ASP.NET Core Minimal API host that demonstrates a full FootLook integration: Swagger, SignalR, MongoDB-backed read repository, the dashboard at `/footlook.html` (embedded in FootLook.Core under `Dashboard/` and served by `MapFootLookEndpoints`), plus test endpoints `/`, `/test2`, `/slow`, `/error`, `/mongo-test`.
 - [FootLook.API](FootLook.API/Program.cs) — Standalone scaffolded API project. **Not integrated with FootLook**; ships only the default `WeatherForecast` controller. Present as a target/example host, not as a dependency of the library.
 - [FootLook.Middleware](FootLook.Middleware/Class1.cs) — **Empty stub project**. No code. Placeholder for a future standalone middleware package.
 - `FootLook.Tests` — Empty test project. **No tests currently written.** Tracked as a critical gap.

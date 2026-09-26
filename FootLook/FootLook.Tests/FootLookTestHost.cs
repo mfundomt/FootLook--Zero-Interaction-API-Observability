@@ -50,10 +50,7 @@ public sealed class FootLookTestHost : IAsyncDisposable
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
         builder.Logging.ClearProviders();
-
-        builder.Services.AddSignalR();
-        // Lets a test swap services (e.g. the Microsoft account store) before AddFootLook adds its TryAdd defaults.
-        configureServices?.Invoke(builder.Services);
+         configureServices?.Invoke(builder.Services);
         builder.Services.AddFootLook(o =>
         {
             o.UserStorePath = userStorePath;

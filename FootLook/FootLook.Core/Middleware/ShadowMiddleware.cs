@@ -13,6 +13,7 @@ using System.Text.RegularExpressions;
 using System.Security.Cryptography;
 using System.Collections.Concurrent;
 using FootLook.Core.Security;
+using FootLook.Core.Dashboard;
 
 #region FootLook Middleware Flow
 //The flow of the middleware can be visualized as follows:
@@ -615,6 +616,12 @@ namespace FootLook.Core.Middleware
             if (ownPrefix.Length > 0 &&
                 (string.Equals(path, ownPrefix, StringComparison.OrdinalIgnoreCase) ||
                  path.StartsWith(ownPrefix + "/", StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+
+            // The built-in dashboard's own pages, likewise.
+            if (FootLookDashboard.IsDashboardPath(path))
             {
                 return true;
             }

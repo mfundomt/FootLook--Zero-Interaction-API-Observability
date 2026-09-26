@@ -78,6 +78,14 @@ namespace FootLook.Core.Options
         public string EndpointBasePath { get; set; } = "/footlook";
 
         /// <summary>
+        /// Whether MapFootLookEndpoints serves the built-in live dashboard at /footlook.html (with
+        /// /footlook-login.html and /footlook-connect.js). The pages hold no data themselves - every
+        /// call they make goes to the authenticated {EndpointBasePath} API. Set to false to run
+        /// FootLook headless, e.g. when only the API and live hub are consumed.
+        /// </summary>
+        public bool EnableDashboard { get; set; } = true;
+
+        /// <summary>
         /// Max in-flight captures buffered between ShadowMiddleware and
         /// ShadowBackgroundWorker. This is in-process, in-memory state (not durable across
         /// a restart) - under sustained overload beyond this capacity, the oldest queued

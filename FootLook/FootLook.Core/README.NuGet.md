@@ -26,29 +26,27 @@ using FootLook.Core.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Register FootLook services
+// 1. Register FootLook services (this also registers SignalR for the live feed)
 builder.Services.AddFootLook(options =>
 {
 	builder.Configuration.GetSection("FootLook").Bind(options);
 });
 
-// 2. Enable live capture streaming
-builder.Services.AddSignalR();
-
 var app = builder.Build();
 
-// 3. Add the capture middleware early in the pipeline
+// 2. Add the capture middleware early in the pipeline
 app.UseFootLook();
 
-// 4. Map the FootLook endpoints (these back the live dashboard)
+// 3. Map the FootLook API, the live hub (/footlook/live) and the dashboard (/footlook.html)
 var footlookOptions = app.Services.GetRequiredService<FootLookOptions>();
 app.MapFootLookEndpoints(footlookOptions);
 
-// 5. Map the live hub so captures stream to connected clients
-app.MapHub<FootLook.Core.Hubs.CaptureHub>("/footlook/live");
-
 app.Run();
 ```
+
+That's all. Run your API and open **`/footlook.html`**: the live dashboard ships inside the package, so there are no files to copy and no `UseStaticFiles()` to add. Its sign-in page (`/footlook-login.html`) and the "Connect to site" script (`/footlook-connect.js`) are served the same way. FootLook never captures its own API or dashboard requests, so none of them need to be in `IgnoredPaths`.
+
+The pages hold no data: everything they show comes from the authenticated `/footlook` API. To run FootLook without the dashboard, set `options.EnableDashboard = false`.
 
 ## Live captures
 
@@ -56,24 +54,15 @@ FootLook is built around **live, real-time observability**. As soon as `UseFootL
 
 ### Stream captures over SignalR
 
-Connect any SignalR client to the live hub to receive captures the moment they happen:
-
-```csharp
-builder.Services.AddSignalR();
-
-// after building the app:
-app.MapHub<FootLook.Core.Hubs.CaptureHub>("/footlook/live");
-```
-
-Example browser client:
+`MapFootLookEndpoints` maps the live hub at `{EndpointBasePath}/live` (default `/footlook/live`), behind the same sign-in as the rest of the API. Connect any SignalR client to it to receive captures the moment they happen. Browsers pass the bearer token as the `footlook_token` query parameter, because a WebSocket upgrade can't carry an `Authorization` header:
 
 ```javascript
 const connection = new signalR.HubConnectionBuilder()
-	.withUrl("/footlook/live")
+	.withUrl("/footlook/live?footlook_token=" + encodeURIComponent(token))
 	.withAutomaticReconnect()
 	.build();
 
-connection.on("RequestCaptured", capture => {
+connection.on("captureReceived", capture => {
 	console.log(
 		`[LIVE] ${capture.method} ${capture.path} ` +
 		`${capture.statusCode} ${capture.durationMs}ms`
@@ -100,8 +89,6 @@ events.OnRequestCaptured += capture =>
 
 Each capture includes details such as HTTP method, path, status code, duration, correlation id, timestamp, and (optionally) request/response bodies.
 
-> **Tip:** If the live dashboard does not show up at runtime, navigate to `/footlook.html`.
-
 ## Configuration
 
 FootLook is configured through `FootLookOptions`. You can bind from configuration and/or set values inline:
@@ -124,9 +111,8 @@ builder.Services.AddFootLook(options =>
 	options.ServiceName = "MyApi";
 	options.EnvironmentName = builder.Environment.EnvironmentName;
 
-	// Paths that should never be captured
-	options.IgnoredPaths.Add("/footlook");
-	options.IgnoredPaths.Add("/footlook.html");
+	// Paths that should never be captured (FootLook's own API and dashboard
+	// are always skipped, so they don't need listing)
 	options.IgnoredPaths.Add("/swagger");
 	options.IgnoredPaths.Add("/favicon.ico");
 	options.IgnoredPaths.Add("/.well-known");
@@ -168,11 +154,12 @@ builder.Services.AddFootLook(options =>
 | `CaptureRequestBody` | Capture request bodies. | `true` |
 | `CaptureResponseBody` | Capture response bodies. | `true` |
 | `MaxBodyLength` | Max bytes stored per body. | `1048576` |
-| `EndpointBasePath` | Base route prefix for FootLook endpoints. | `/footlook` |
+| `EndpointBasePath` | Base route prefix for FootLook endpoints. The dashboard calls whatever prefix you set. | `/footlook` |
+| `EnableDashboard` | Serve the built-in dashboard at `/footlook.html` (plus `/footlook-login.html` and `/footlook-connect.js`). | `true` |
 | `QueCapacity` | Capacity of the internal capture queue. | `10000` |
 | `ServiceName` | Logical service name shown in captures. | `"MyApi"` |
 | `EnvironmentName` | Environment name shown in captures. | `Development` |
-| `IgnoredPaths` | Paths excluded from capture. | dashboard/swagger paths |
+| `IgnoredPaths` | Paths excluded from capture, in addition to FootLook's own API and dashboard. | swagger, bot/scanner paths |
 | `AllowedMethods` | HTTP methods FootLook will capture; empty list means all methods. Not related to CORS. | `GET`, `POST`, ... |
 
 ### Example `appsettings.json`
@@ -221,7 +208,7 @@ That is all the setup there is:
 - **Local accounts are switched off** while a ProjectId is set: `POST /footlook/auth/register`, `/auth/login` and `/auth/microsoft` answer `404 { "error": "disabled_in_central_mode" }`. Remove the ProjectId to get them back.
 - `GET /footlook/auth/config` tells the dashboard which mode the host is in. Optional overrides (`Issuer`, `JwksUrl`, `LoginUrl`, `ClockSkewSeconds`) exist under `FootLook:Central` for a self-hosted or local central service; they default to FootLook's own.
 
-> **Note:** the dashboard page is not packaged with the NuGet library yet. Until it is, copy `wwwroot/footlook.html` from the FootLook.Demo project into your host's `wwwroot`. The copy in this repository already knows how to accept a pass and how to redirect a signed-out browser to the sign-in page.
+The built-in dashboard (`/footlook.html`) handles central sign-in with no extra setup: it redirects a signed-out browser to the sign-in page and accepts the pass when the browser comes back.
 
 ## Endpoints (internal)
 
@@ -248,7 +235,7 @@ single-instance/single-host tool for now.
 
 - Targets .NET 8.
 - Add `UseFootLook()` early in the pipeline so it can observe the full request lifecycle.
-- Add capture-related paths (dashboard, swagger, favicon) to `IgnoredPaths` to avoid self-capture noise.
+- Add your own tooling paths (swagger, favicon) to `IgnoredPaths` to avoid capture noise. FootLook's own API and dashboard are skipped automatically.
 - The capture queue is bounded (`QueCapacity`) and drops the oldest queued
   capture under sustained overload rather than blocking request threads or
   growing unbounded. Drops are counted and visible via
