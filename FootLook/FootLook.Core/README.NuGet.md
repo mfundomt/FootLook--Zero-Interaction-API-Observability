@@ -48,6 +48,25 @@ That's all. Run your API and open **`/footlook.html`**: the live dashboard ships
 
 The pages hold no data: everything they show comes from the authenticated `/footlook` API. To run FootLook without the dashboard, set `options.EnableDashboard = false`.
 
+## Signing in
+
+Every FootLook endpoint except `/health` and the sign-in routes (`/auth/register`, `/auth/login`, `/auth/microsoft`, `/auth/exchange`, `/auth/config`) needs a bearer token, and **capture only runs while someone is signed in**. Each sign-in is its own observation session: it sees only the captures made during it, and they are released when it ends.
+
+- **Local accounts (default):** create an account at `/footlook-login.html` (or `POST /footlook/auth/register`), then sign in. The first account on a host is its admin. Once your accounts exist, set `FootLook:AllowRegistration` to `false`.
+- **Microsoft accounts:** add `FootLook.Data` and call `AddFootLookSqlAccounts(builder.Configuration)`; see that package's README.
+- **FootLook's website:** see [Central sign-in](#central-sign-in) below.
+
+For production, set `FootLook:TokenSigningKey` (32+ characters, from configuration or a secret store). Without it, tokens stop working when the app restarts.
+
+## Upgrading from 1.x
+
+2.0 replaces 1.x's API keys with the accounts above. What to change:
+
+- Remove `ApiKeys` and `RequireAuthentication` from your FootLook configuration. They no longer exist, and FootLook's endpoints always require sign-in.
+- `POST /footlook/auth/token` is gone. Sign in with `/footlook/auth/login` (email and password), Microsoft, or central sign-in instead.
+- Remove `builder.Services.AddSignalR()` and `app.MapHub<CaptureHub>(...)` if you added them for FootLook: `AddFootLook` and `MapFootLookEndpoints` now do both.
+- Delete any `footlook.html` you copied into `wwwroot`: the package serves the dashboard itself. A copy served by `UseStaticFiles()` would shadow the packaged one and go stale.
+
 ## Live captures
 
 FootLook is built around **live, real-time observability**. As soon as `UseFootLook()` is in the pipeline, every request flowing through your API is captured and made available instantly — no polling, no manual instrumentation, no database.
